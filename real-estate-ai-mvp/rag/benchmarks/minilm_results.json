@@ -1,0 +1,871 @@
+{
+  "candidate": "minilm",
+  "started_at_utc": "2026-09-23T00:44:39.753789+00:00",
+  "model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+  "environment": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.22631-SP0",
+    "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "logical_cpus": 8,
+    "torch_threads": 4,
+    "device": "cpu",
+    "dependencies": {
+      "sentence-transformers": "5.7.0",
+      "torch": "2.14.0",
+      "transformers": "5.17.0",
+      "numpy": "2.5.3"
+    }
+  },
+  "dataset": {
+    "properties": 1000,
+    "sections": 2016,
+    "queries": 40,
+    "synthetic": true,
+    "sha256": "e49f81ee3ae8d892016d2c8037cff2d1ddeb96253fe5139a18369f3ba434e59d"
+  },
+  "cost": {
+    "external_inference_usd": 0,
+    "note": "Local CPU inference; hardware, electricity and one-time public model download are not priced"
+  },
+  "model_load_seconds_including_download_if_uncached": 116.95047339994926,
+  "model_id": "{\"dimension\":384,\"document_prefix\":\"\",\"max_sequence_length\":128,\"name\":\"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2\",\"normalize\":true,\"provider\":\"sentence-transformers-v1\",\"query_prefix\":\"\",\"revision\":\"e8f8c211226b894fcb81acc59f3b34ba3efd5f42\"}",
+  "dimension": 384,
+  "cold_first_query_ms_after_load": 161.68919997289777,
+  "corpus_embedding_seconds": 29.444550700020045,
+  "warm_single_query_embedding": {
+    "median_ms": 27.44080004049465,
+    "p95_ms": 36.786584975197904,
+    "samples": 80
+  },
+  "quality": {
+    "queries": 40,
+    "recall_at_1": 0.525,
+    "recall_at_3": 0.6,
+    "recall_at_5": 0.625,
+    "mrr": 0.576041120857941
+  },
+  "by_language": {
+    "en": {
+      "queries": 5,
+      "recall_at_1": 0.6,
+      "recall_at_3": 0.6,
+      "recall_at_5": 0.6,
+      "mrr": 0.6014711615938451
+    },
+    "gu": {
+      "queries": 5,
+      "recall_at_1": 0.2,
+      "recall_at_3": 0.4,
+      "recall_at_5": 0.4,
+      "mrr": 0.3023937856689917
+    },
+    "hi": {
+      "queries": 5,
+      "recall_at_1": 0.4,
+      "recall_at_3": 0.4,
+      "recall_at_5": 0.4,
+      "mrr": 0.445796812749004
+    },
+    "mixed": {
+      "queries": 5,
+      "recall_at_1": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0,
+      "mrr": 1.0
+    },
+    "mr": {
+      "queries": 5,
+      "recall_at_1": 0.6,
+      "recall_at_3": 0.8,
+      "recall_at_5": 1.0,
+      "mrr": 0.74
+    },
+    "romanized_gu": {
+      "queries": 5,
+      "recall_at_1": 0.6,
+      "recall_at_3": 0.6,
+      "recall_at_5": 0.6,
+      "mrr": 0.6111695906432748
+    },
+    "romanized_hi": {
+      "queries": 5,
+      "recall_at_1": 0.4,
+      "recall_at_3": 0.6,
+      "recall_at_5": 0.6,
+      "mrr": 0.5061111111111111
+    },
+    "romanized_mr": {
+      "queries": 5,
+      "recall_at_1": 0.4,
+      "recall_at_3": 0.4,
+      "recall_at_5": 0.4,
+      "mrr": 0.4013865050973016
+    }
+  },
+  "per_query": [
+    {
+      "id": "en-1",
+      "language": "en",
+      "text": "Shivalik Sky Type B 3 BHK with private foyer",
+      "relevant": [
+        "p02"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p02",
+        "p01",
+        "d0436",
+        "d0420",
+        "d0332"
+      ]
+    },
+    {
+      "id": "en-2",
+      "language": "en",
+      "text": "2 BHK in Wakad under 70 lakh with pool",
+      "relevant": [
+        "p04"
+      ],
+      "rank": 158,
+      "top_5": [
+        "p13",
+        "d0218",
+        "d0258",
+        "d0058",
+        "d0378"
+      ]
+    },
+    {
+      "id": "en-3",
+      "language": "en",
+      "text": "Shela four bedroom villa with solar panels and private garden",
+      "relevant": [
+        "p09"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p09",
+        "d0569",
+        "d0585",
+        "d0537",
+        "d0577"
+      ]
+    },
+    {
+      "id": "en-4",
+      "language": "en",
+      "text": "Office on SG Highway 1200 square feet at 85 lakh",
+      "relevant": [
+        "p10"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p10",
+        "d0004",
+        "d0500",
+        "d0804",
+        "d0652"
+      ]
+    },
+    {
+      "id": "en-5",
+      "language": "en",
+      "text": "Paldi 2 BHK 850 sqft possession December 2027",
+      "relevant": [
+        "p03"
+      ],
+      "rank": 974,
+      "top_5": [
+        "d0801",
+        "d0403",
+        "d0425",
+        "d0625",
+        "d0454"
+      ]
+    },
+    {
+      "id": "hi-1",
+      "language": "hi",
+      "text": "साउथ बोपल में 92 लाख का तीन बीएचके जिसमें ईवी चार्जिंग है",
+      "relevant": [
+        "p01"
+      ],
+      "rank": 10,
+      "top_5": [
+        "p14",
+        "d0001",
+        "d0089",
+        "d0337",
+        "d0393"
+      ]
+    },
+    {
+      "id": "hi-2",
+      "language": "hi",
+      "text": "वाकड पुणे में 68 लाख का दो बेडरूम घर और स्विमिंग पूल",
+      "relevant": [
+        "p04"
+      ],
+      "rank": 251,
+      "top_5": [
+        "d0002",
+        "d0890",
+        "d0290",
+        "d0690",
+        "d0006"
+      ]
+    },
+    {
+      "id": "hi-3",
+      "language": "hi",
+      "text": "शेला में चार बेडरूम का विला निजी बगीचे के साथ",
+      "relevant": [
+        "p09"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p09",
+        "d0553",
+        "d0577",
+        "d0593",
+        "d0569"
+      ]
+    },
+    {
+      "id": "hi-4",
+      "language": "hi",
+      "text": "अंधेरी वेस्ट में एक बीएचके तैयार फ्लैट",
+      "relevant": [
+        "p07"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p07",
+        "d0913",
+        "d0177",
+        "d0921",
+        "d0113"
+      ]
+    },
+    {
+      "id": "hi-5",
+      "language": "hi",
+      "text": "पालडी में मेट्रो के पास दो बीएचके 62 लाख",
+      "relevant": [
+        "p03"
+      ],
+      "rank": 8,
+      "top_5": [
+        "p14",
+        "p06",
+        "p08",
+        "d0004",
+        "d0076"
+      ]
+    },
+    {
+      "id": "mr-1",
+      "language": "mr",
+      "text": "कोथरूडमध्ये फर्निश्ड दोन बेडरूमचा तयार फ्लॅट हवा",
+      "relevant": [
+        "p06"
+      ],
+      "rank": 2,
+      "top_5": [
+        "p12",
+        "p06",
+        "d0321",
+        "d0361",
+        "d0273"
+      ]
+    },
+    {
+      "id": "mr-2",
+      "language": "mr",
+      "text": "बाणेरमध्ये टेनिस कोर्ट असलेला तीन बीएचके प्रकल्प",
+      "relevant": [
+        "p05"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p05",
+        "p08",
+        "p15",
+        "p02",
+        "d0922"
+      ]
+    },
+    {
+      "id": "mr-3",
+      "language": "mr",
+      "text": "हिंजवडीमध्ये 32 लाखांचा स्टुडिओ फ्लॅट",
+      "relevant": [
+        "p12"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p12",
+        "d0380",
+        "d0300",
+        "p14",
+        "d0004"
+      ]
+    },
+    {
+      "id": "mr-4",
+      "language": "mr",
+      "text": "वाकडमध्ये 780 चौरस फूट कार्पेट क्षेत्राचा दोन बीएचके फ्लॅट",
+      "relevant": [
+        "p04"
+      ],
+      "rank": 5,
+      "top_5": [
+        "p13",
+        "p14",
+        "p06",
+        "p03",
+        "p04"
+      ]
+    },
+    {
+      "id": "mr-5",
+      "language": "mr",
+      "text": "ठाण्यात बॅडमिंटन कोर्ट आणि स्विमिंग पूल असलेले घर",
+      "relevant": [
+        "p08"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p08",
+        "p05",
+        "p15",
+        "d0778",
+        "d0938"
+      ]
+    },
+    {
+      "id": "gu-1",
+      "language": "gu",
+      "text": "સાઉથ બોપલમાં ત્રણ બેડરૂમનું 92 લાખનું તૈયાર ઘર",
+      "relevant": [
+        "p01"
+      ],
+      "rank": 996,
+      "top_5": [
+        "d0001",
+        "d0002",
+        "d0393",
+        "d0353",
+        "d0313"
+      ]
+    },
+    {
+      "id": "gu-2",
+      "language": "gu",
+      "text": "શેલામાં ખાનગી બગીચાવાળો ચાર બેડરૂમનો વિલા",
+      "relevant": [
+        "p09"
+      ],
+      "rank": 19,
+      "top_5": [
+        "d0553",
+        "d0593",
+        "d0585",
+        "d0577",
+        "d0537"
+      ]
+    },
+    {
+      "id": "gu-3",
+      "language": "gu",
+      "text": "પાલડીમાં મેટ્રો નજીક બે બીએચકે 62 લાખમાં",
+      "relevant": [
+        "p03"
+      ],
+      "rank": 8,
+      "top_5": [
+        "p10",
+        "p14",
+        "p13",
+        "p04",
+        "p06"
+      ]
+    },
+    {
+      "id": "gu-4",
+      "language": "gu",
+      "text": "સુરત અડાજણમાં ત્રણ બેડરૂમનું 78 લાખનું ઘર",
+      "relevant": [
+        "p11"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p11",
+        "d0001",
+        "d0002",
+        "d0185",
+        "d0385"
+      ]
+    },
+    {
+      "id": "gu-5",
+      "language": "gu",
+      "text": "મણિનગરમાં કાંકરિયા તળાવ નજીક બે બીએચકે",
+      "relevant": [
+        "p13"
+      ],
+      "rank": 3,
+      "top_5": [
+        "p11",
+        "p09",
+        "p13",
+        "p04",
+        "p08"
+      ]
+    },
+    {
+      "id": "romanized_hi-1",
+      "language": "romanized_hi",
+      "text": "South Bopal mein 3 bhk 92 lakh ka ghar EV charging ke saath",
+      "relevant": [
+        "p01"
+      ],
+      "rank": 2,
+      "top_5": [
+        "p02",
+        "p01",
+        "p05",
+        "p09",
+        "p08"
+      ]
+    },
+    {
+      "id": "romanized_hi-2",
+      "language": "romanized_hi",
+      "text": "Andheri West mein ek bedroom ready flat chahiye",
+      "relevant": [
+        "p07"
+      ],
+      "rank": 120,
+      "top_5": [
+        "d0472",
+        "d0376",
+        "d0224",
+        "d0216",
+        "d0312"
+      ]
+    },
+    {
+      "id": "romanized_hi-3",
+      "language": "romanized_hi",
+      "text": "Shela mein char bedroom villa apne garden ke saath",
+      "relevant": [
+        "p09"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p09",
+        "d0217",
+        "d0817",
+        "d0921",
+        "d0377"
+      ]
+    },
+    {
+      "id": "romanized_hi-4",
+      "language": "romanized_hi",
+      "text": "Paldi mein metro ke paas 62 lakh ka do bhk",
+      "relevant": [
+        "p03"
+      ],
+      "rank": 45,
+      "top_5": [
+        "p14",
+        "p06",
+        "d0244",
+        "d0044",
+        "d0844"
+      ]
+    },
+    {
+      "id": "romanized_hi-5",
+      "language": "romanized_hi",
+      "text": "Shivalik Sky Type B mein private foyer kitna hai",
+      "relevant": [
+        "p02"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p02",
+        "p01",
+        "d0231",
+        "d0831",
+        "d0271"
+      ]
+    },
+    {
+      "id": "romanized_mr-1",
+      "language": "romanized_mr",
+      "text": "Kothrud madhye furnished don bedroom cha tayar flat pahije",
+      "relevant": [
+        "p06"
+      ],
+      "rank": 839,
+      "top_5": [
+        "d0472",
+        "d0432",
+        "d0312",
+        "d0778",
+        "d0392"
+      ]
+    },
+    {
+      "id": "romanized_mr-2",
+      "language": "romanized_mr",
+      "text": "Baner madhye tennis court aslela teen bhk ghar",
+      "relevant": [
+        "p05"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p05",
+        "p08",
+        "p02",
+        "p01",
+        "p09"
+      ]
+    },
+    {
+      "id": "romanized_mr-3",
+      "language": "romanized_mr",
+      "text": "Hinjewadi madhye 32 lakh cha studio flat hava",
+      "relevant": [
+        "p12"
+      ],
+      "rank": 247,
+      "top_5": [
+        "d0224",
+        "d0944",
+        "d0024",
+        "d0144",
+        "d0232"
+      ]
+    },
+    {
+      "id": "romanized_mr-4",
+      "language": "romanized_mr",
+      "text": "Wakad madhye 780 square foot carpet don bhk ghar",
+      "relevant": [
+        "p04"
+      ],
+      "rank": 591,
+      "top_5": [
+        "p13",
+        "d0259",
+        "d0763",
+        "p11",
+        "d0979"
+      ]
+    },
+    {
+      "id": "romanized_mr-5",
+      "language": "romanized_mr",
+      "text": "Thane madhye badminton court ani swimming pool aslela flat",
+      "relevant": [
+        "p08"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p08",
+        "p05",
+        "p02",
+        "p01",
+        "p15"
+      ]
+    },
+    {
+      "id": "romanized_gu-1",
+      "language": "romanized_gu",
+      "text": "South Bopal ma tran bedroom nu 92 lakh nu taiyar ghar",
+      "relevant": [
+        "p01"
+      ],
+      "rank": 20,
+      "top_5": [
+        "p05",
+        "p09",
+        "p08",
+        "p11",
+        "d0273"
+      ]
+    },
+    {
+      "id": "romanized_gu-2",
+      "language": "romanized_gu",
+      "text": "Shela ma char bedroom no villa khangi bagicha sathe",
+      "relevant": [
+        "p09"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p09",
+        "d0918",
+        "d0982",
+        "d0926",
+        "d0318"
+      ]
+    },
+    {
+      "id": "romanized_gu-3",
+      "language": "romanized_gu",
+      "text": "Paldi ma metro pase be bhk 62 lakh ma joie",
+      "relevant": [
+        "p03"
+      ],
+      "rank": 171,
+      "top_5": [
+        "p07",
+        "p14",
+        "d0948",
+        "d0244",
+        "d0932"
+      ]
+    },
+    {
+      "id": "romanized_gu-4",
+      "language": "romanized_gu",
+      "text": "Adajan Surat ma tran bedroom nu 78 lakh nu ghar",
+      "relevant": [
+        "p11"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p11",
+        "p05",
+        "p12",
+        "p08",
+        "d0851"
+      ]
+    },
+    {
+      "id": "romanized_gu-5",
+      "language": "romanized_gu",
+      "text": "Maninagar ma Kankaria talav pase be bedroom nu ghar",
+      "relevant": [
+        "p13"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p13",
+        "p09",
+        "p12",
+        "d0767",
+        "d0919"
+      ]
+    },
+    {
+      "id": "mixed-1",
+      "language": "mixed",
+      "text": "Shivalik Sky Type A में EV charging અને gym છે?",
+      "relevant": [
+        "p01"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p01",
+        "p02",
+        "d0044",
+        "d0844",
+        "d0884"
+      ]
+    },
+    {
+      "id": "mixed-2",
+      "language": "mixed",
+      "text": "Baner मध्ये 3 BHK tennis court possession June 2028",
+      "relevant": [
+        "p05"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p05",
+        "p08",
+        "p02",
+        "d0778",
+        "p15"
+      ]
+    },
+    {
+      "id": "mixed-3",
+      "language": "mixed",
+      "text": "SG Highway પર office 1200 sqft 85 lakh",
+      "relevant": [
+        "p10"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p10",
+        "d0004",
+        "d0804",
+        "d0580",
+        "d0540"
+      ]
+    },
+    {
+      "id": "mixed-4",
+      "language": "mixed",
+      "text": "Naranpura 3 BHK બે balconies ready to move 92 lakh",
+      "relevant": [
+        "p16"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p16",
+        "p01",
+        "p02",
+        "p13",
+        "p14"
+      ]
+    },
+    {
+      "id": "mixed-5",
+      "language": "mixed",
+      "text": "Vastral में Lotus Heights 2 BHK 48 lakh",
+      "relevant": [
+        "p14"
+      ],
+      "rank": 1,
+      "top_5": [
+        "p14",
+        "p04",
+        "p02",
+        "p01",
+        "p05"
+      ]
+    }
+  ],
+  "numpy_exact_section_top5": {
+    "median_ms": 0.13625004794448614,
+    "p95_ms": 0.22163003450259552,
+    "samples": 120,
+    "rows": 2016,
+    "note": "In-process dense cosine + top-5, excludes DB/serialization/embedding"
+  },
+  "postgres_exact": {
+    "status": "completed",
+    "pgvector_version": "0.8.6",
+    "postgres_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+    "rows": 2016,
+    "index": "none (exact sequential scan)",
+    "top_k": 5,
+    "round_trip": {
+      "median_ms": 2.417400013655424,
+      "p95_ms": 3.89428500784561,
+      "samples": 120
+    },
+    "explain_analyze": [
+      {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 506.69,
+          "Total Cost": 506.7,
+          "Plan Rows": 5,
+          "Plan Width": 12,
+          "Actual Startup Time": 1.726,
+          "Actual Total Time": 1.734,
+          "Actual Rows": 5,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 448,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 506.69,
+              "Total Cost": 511.73,
+              "Plan Rows": 2016,
+              "Plan Width": 12,
+              "Actual Startup Time": 1.723,
+              "Actual Total Time": 1.727,
+              "Actual Rows": 5,
+              "Actual Loops": 1,
+              "Sort Key": [
+                "((embedding <=> '[0.112773314,0.08298423,-0.04148158,0.0015209884,-0.034617808,-0.014886276,-0.065844,-0.013341499,-0.05232133,0.011641994,0.042968802,-0.027318869,-0.026352258,-0.06861466,0.1437601,0.06361639,-0.0060797026,0.014224309,0.03843222,0.043633394,-0.04687465,-0.043415654,-0.097928494,0.0066396296,-0.048280243,-0.018581707,0.062229652,0.03166433,-0.01822448,-0.012295603,0.008608727,-0.00938125,0.066302486,0.07502424,0.010831427,-0.023853684,0.0333137,-0.031989686,-0.03069416,-0.06703017,-0.06589526,0.06468871,0.014197544,0.022620505,-0.023686055,0.07106518,0.0040452583,-8.667637e-07,-0.0053553344,-0.08733719,-0.044945396,0.0067111608,-0.08295929,0.0038846543,-0.016411178,0.01005313,0.004281749,0.07508144,-0.0015217061,-0.034154672,0.041568413,0.018590152,-0.06456678,-0.045146264,-0.037291635,0.064010784,-0.03826644,-0.07263333,0.013174013,-0.09098928,-0.06786491,0.011080264,-0.0033608438,-0.080508925,0.044988494,-0.011439239,-0.050938457,0.035672955,-0.011721963,-0.024696639,0.030102616,0.009162443,-0.036357425,0.116214804,-0.044859108,-0.017053645,-0.01874836,-0.02406154,-0.031238545,6.8948466e-05,0.06880359,-0.09477725,-0.043404415,0.0646245,-0.019757736,-0.068315856,-0.011593436,-0.095437326,0.08481734,0.07149262,0.05167296,-0.023715312,0.074035764,0.06064961,-0.0653326,0.008283237,0.09102627,0.05735979,0.0014541107,-0.05732178,-0.09676543,-0.02108852,0.012479614,-0.066856444,-0.07802564,0.026672324,-0.00379504,0.03748287,-0.0063646147,-0.08932969,0.0073795826,-0.048245873,0.098564506,-0.04090972,0.043376327,-0.057304677,-0.04714643,0.07234973,0.024815751,0.040992353,-0.019145403,0.08784568,0.008548205,-0.010105647,-0.0011536975,0.06313224,0.013168134,-0.05754263,0.03788812,-0.07511055,-0.03937393,-0.018762764,0.09372165,0.039186977,0.08284978,-0.04378906,-0.054036766,0.026787786,-0.039200474,-0.056268066,-0.0024095837,-0.06603066,0.059370548,0.084981635,0.07468754,0.022172313,-0.082622685,0.085901916,0.0040781205,-0.0018401378,-0.06296957,0.03621029,-0.021892216,0.008435198,-0.084155224,0.010846771,-0.07142409,-0.051913,-0.004792102,0.03886217,-0.041423872,0.010664259,0.008328908,0.01573103,0.008376519,-0.03658715,0.06102885,0.035667937,-0.10456395,0.061717376,-0.04052763,-0.0037208642,-0.049731515,0.00750717,0.064467564,0.008864631,0.004340919,-0.0011947255,0.09722726,0.00083946367,-0.09628278,0.002914341,-0.04940599,-0.04361057,0.005351534,-0.0147736315,0.03941337,-0.072274454,0.04657422,-0.012635736,0.03535207,0.052244414,-0.012804544,-0.032135464,0.008209783,0.036260784,-0.042250644,0.018965388,-0.0770522,0.06773406,0.07923853,0.004386129,-0.031001385,0.040338628,0.076057084,0.026032366,-0.051962245,-0.0021947,-0.119475216,0.02645248,0.023134468,-0.010711579,-0.026712716,-0.09539584,0.05025405,-0.0068623354,-0.09713461,-0.08212652,0.024589378,0.022404928,-0.018307306,0.0312157,-0.013664449,0.08735171,0.0133660715,-0.00063103985,0.06212213,0.013888106,0.001576091,-0.0038093557,0.050466232,-0.05403373,-0.041580427,0.019622449,0.011579826,-0.048085663,-0.05813489,0.020395959,0.0708115,0.091717005,-0.035908327,0.1072057,0.007595388,0.05922727,0.014499042,-0.044194277,-0.039488655,0.04241069,-0.007305851,-0.08916743,0.012934446,-0.02216379,-0.061368596,0.024308491,0.005295487,0.046617996,0.019573476,-0.01383004,-0.0067392103,-0.060729023,0.042014427,-0.013877437,0.029166616,-0.01489399,0.032596674,-0.005878063,-0.0104623865,0.043637175,-0.018316966,0.07717953,-0.016473092,0.07388797,0.06036441,-0.10332598,0.14006506,-0.018302167,0.027345875,0.026391951,-0.09210221,0.038349513,0.12365061,0.08615912,-0.011120571,-0.014728213,-0.03959953,0.025132462,0.057572864,0.029576398,-0.051521048,0.035093922,0.08224895,0.034453597,0.032624226,0.007582852,0.040911693,-0.027600937,-0.0033050901,-0.044105094,0.07902536,-0.038254015,0.013855198,-0.06531885,-0.038179003,-0.042156212,0.025838163,0.06157488,0.06733587,-0.03096952,0.02677,-0.075974226,-0.05375817,-0.10125081,-0.0570401,0.03490486,-0.030752722,-0.08629052,-0.025526984,-0.029656012,-0.00962657,-0.013696094,-0.056713384,-0.060822062,-0.0006349085,0.080077596,-0.045021664,-0.029380817,0.02090203,-0.029045884,0.0014000982,-0.020437656,0.007262381,-0.02865294,0.07201942,-0.01324107,0.0005729681,0.050062254,-0.112977184,-0.05035988,0.10207064,0.0039721197,0.024366613,0.062080707,0.041571368,-0.03206272,0.0009496683,0.052781604,-0.013046327,-0.029452251,0.04544,0.049071193,0.08532479,-0.08116497,0.018897222,0.044432867,0.038609676,-0.019644221,0.0065479362,-0.06578498,-0.08950198,0.106545225,0.023267679,0.012106458,0.015076838,-0.0418529,0.017437452,-0.0037013837,0.011627764,-0.03253955,0.006172369,0.021261908,0.03697925,0.023548955,-0.14724682,0.05831314]'::vector))"
+              ],
+              "Sort Method": "top-N heapsort",
+              "Sort Space Used": 25,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 448,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Plans": [
+                {
+                  "Node Type": "Seq Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Relation Name": "embedding_benchmark",
+                  "Alias": "embedding_benchmark",
+                  "Startup Cost": 0.0,
+                  "Total Cost": 473.2,
+                  "Plan Rows": 2016,
+                  "Plan Width": 12,
+                  "Actual Startup Time": 0.009,
+                  "Actual Total Time": 1.36,
+                  "Actual Rows": 2016,
+                  "Actual Loops": 1,
+                  "Shared Hit Blocks": 0,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 448,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0
+                }
+              ]
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 19,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.141,
+        "Triggers": [],
+        "Execution Time": 1.803
+      }
+    ]
+  },
+  "status": "completed"
+}

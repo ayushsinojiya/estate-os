@@ -1,0 +1,39 @@
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Local credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+/deploy/azure/azure.env
+/real-estate-ai-mvp/backend/src/main/resources/application.properties
+
+# Dependency and build output
+**/node_modules/
+**/dist/
+**/coverage/
+**/target/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/*.tsbuildinfo
+
+# Runtime data, logs, and generated benchmark artefacts
+/storage/
+/real-estate-ai-mvp/rag/storage/
+*.log
+*.pid
+/real-estate-ai-mvp/rag/benchmarks/*.npz
+
+# Local archives
+*.zip
