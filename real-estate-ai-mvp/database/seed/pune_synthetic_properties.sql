@@ -1,11 +1,11 @@
--- EstateOS Pune synthetic inventory loader
+-- EstraOS Pune synthetic inventory loader
 --
 -- Creates 25 fictional Pune developments and 1,000 fictional property records
 -- (40 units per development). This is demo data only: it is not sourced from,
 -- affiliated with, or offered by any real developer or property owner.
 --
 -- Run against a local PostgreSQL database after Flyway migrations and the demo seed:
---   psql -v ON_ERROR_STOP=1 -U postgres -d estate_os -f database/seed/pune_synthetic_properties.sql
+--   psql -v ON_ERROR_STOP=1 -U postgres -d estra_os -f database/seed/pune_synthetic_properties.sql
 --
 -- Change target_workspace_name below only when the local demo workspace has a
 -- different name. The script never creates a workspace and is safe to rerun.
@@ -87,7 +87,7 @@ BEGIN
           'country', 'India',
           'location', neighbourhoods[project_index] || ', Pune',
           'developer', 'Fictional Pune Habitat Co.',
-          'description', 'Fictional Pune demo development generated for local EstateOS testing.',
+          'description', 'Fictional Pune demo development generated for local EstraOS testing.',
           'possessionDate', possession_date::text,
           'amenities', 'Clubhouse, fitness studio, landscaped garden, visitor parking'
         )
@@ -146,7 +146,7 @@ BEGIN
           'floor', CASE WHEN property_kind = 'APARTMENT' THEN 1 + ((unit_index - 1) % 20) ELSE NULL END,
           'furnishing', CASE WHEN property_kind IN ('VILLA', 'APARTMENT') THEN (ARRAY['Unfurnished', 'Semi-furnished', 'Furnished'])[1 + (unit_index % 3)] ELSE NULL END,
           'currency', 'INR',
-          'source', 'EstateOS Pune synthetic data loader'
+          'source', 'EstraOS Pune synthetic data loader'
         )
       WHERE NOT EXISTS (
         SELECT 1
@@ -164,7 +164,7 @@ BEGIN
   SELECT count(*) INTO existing_units
     FROM units
    WHERE units.workspace_id = target_workspace_id
-     AND data ->> 'source' = 'EstateOS Pune synthetic data loader';
+     AND data ->> 'source' = 'EstraOS Pune synthetic data loader';
 
   IF existing_units <> 1000 THEN
     RAISE EXCEPTION 'Pune synthetic loader expected 1,000 units but found %.', existing_units;

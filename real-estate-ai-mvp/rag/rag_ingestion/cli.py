@@ -9,7 +9,7 @@ from .worker import Worker
 
 
 def main():
-    parser = argparse.ArgumentParser(description='EstateOS ingestion (not voice retrieval)')
+    parser = argparse.ArgumentParser(description='EstraOS ingestion (not voice retrieval)')
     parser.add_argument('command', choices=['migrate', 'api', 'worker', 'reembed'])
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=8090)

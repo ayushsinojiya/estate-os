@@ -1,6 +1,6 @@
 # Architecture
 
-EstateOS covers inquiry through qualification, property recommendations, site visits, and human-agent handover. Buying, contracts, payments, and legal processing remain with the human agent.
+EstraOS covers inquiry through qualification, property recommendations, site visits, and human-agent handover. Buying, contracts, payments, and legal processing remain with the human agent.
 
 The React application calls a versioned Spring Boot API. PostgreSQL owns business records, relationships, histories, and delivery state. Flyway applies forward-only migrations at startup. Existing AI and delivery services are accessed only through replaceable Java interfaces. No embedding storage or voice-agent internals are included.
 

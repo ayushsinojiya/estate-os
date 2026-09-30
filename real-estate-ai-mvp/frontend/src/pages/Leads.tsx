@@ -5,7 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { CalendarDays, Handshake, Phone, Plus, Sparkles } from "lucide-react";
+import { CalendarDays, Handshake, Phone, Plus, Sparkles } from "../components/icons";
 import { useApi } from "../hooks/useApi";
 import { useList } from "../hooks/useList";
 import {

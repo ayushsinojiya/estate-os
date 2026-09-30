@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Building2, Check, Sparkles } from "lucide-react";
+import { Building2, Check, Sparkles } from "../components/icons";
 import {
   Badge,
   Empty,

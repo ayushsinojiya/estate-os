@@ -5,7 +5,7 @@ import {
   Phone,
   Plus,
   Users,
-} from "lucide-react";
+} from "../components/icons";
 import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { useAuth } from "../hooks/useAuth";

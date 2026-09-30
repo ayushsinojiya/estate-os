@@ -1,6 +1,4 @@
-import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { RefreshCw } from "lucide-react";
 import { useApi } from "../hooks/useApi";
 import { useList } from "../hooks/useList";
 import {
@@ -8,14 +6,10 @@ import {
   Badge,
   DataTable,
   Details,
-  ErrorState,
   Filters,
   PageHeader,
   Pagination,
-  useToast,
 } from "../components/ui";
-import { write } from "../api/client";
-import { queryClient } from "../services/query";
 import { date, label, list } from "../utils/format";
 export function Calls() {
   const l = useList("/calls");
@@ -110,9 +104,6 @@ export function RichContent({ value }: { value: any }) {
 export function CallDetail() {
   const { id } = useParams();
   const q = useApi(`/calls/${id}`);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  const toast = useToast();
   const d = q.data || {};
   return (
     <>
@@ -120,30 +111,7 @@ export function CallDetail() {
         title="Conversation details"
         back="/calls"
         description={date(d.createdAt)}
-        action={
-          <button
-            className="btn-secondary"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setError(null);
-              try {
-                await write(`/calls/${id}/refresh`, {});
-                await queryClient.invalidateQueries();
-                toast("Conversation refreshed");
-              } catch (e) {
-                setError(e);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <RefreshCw size={16} className={busy ? "animate-spin" : ""} />
-            Refresh details
-          </button>
-        }
       />
-      {error != null && <ErrorState error={error} />}
       <Async query={q}>
         {d.mock && (
           <div className="demo-strip">

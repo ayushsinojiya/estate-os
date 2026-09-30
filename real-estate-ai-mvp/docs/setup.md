@@ -6,7 +6,7 @@ Review `backend/.env.example`. Its values are placeholders, not working credenti
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | JDBC PostgreSQL URL, such as `jdbc:postgresql://localhost:5432/estateos` |
+| `DATABASE_URL` | JDBC PostgreSQL URL, such as `jdbc:postgresql://localhost:5432/estraos` |
 | `DATABASE_USERNAME` | Dedicated database role |
 | `DATABASE_PASSWORD` | Database role password |
 | `JWT_SECRET` | Random signing material, at least 32 bytes; required |
@@ -41,7 +41,7 @@ Flyway applies the schema. To build a standalone artifact:
 
 ```sh
 mvn verify
-java -jar target/estateos-api-1.0.0.jar
+java -jar target/estraos-api-1.0.0.jar
 ```
 
 ## Frontend environment

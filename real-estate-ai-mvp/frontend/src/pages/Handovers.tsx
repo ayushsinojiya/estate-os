@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Handshake, Plus } from "lucide-react";
+import { Handshake, Plus } from "../components/icons";
 import { useApi } from "../hooks/useApi";
 import { useList } from "../hooks/useList";
 import {
@@ -114,7 +114,7 @@ export function Handovers() {
       <div className="info-strip">
         <Handshake size={19} />
         <span>
-          EstateOS supports the journey through qualification and site visits.
+          EstraOS supports the journey through qualification and site visits.
           Your human real-estate agent handles later buying, financial, and
           legal activities.
         </span>

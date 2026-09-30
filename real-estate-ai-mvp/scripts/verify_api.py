@@ -1,4 +1,4 @@
-"""Exercise a running, disposable EstateOS demo installation.
+"""Exercise a running, disposable EstraOS demo installation.
 
 Creates clearly named verification records, never deletes data, and exits nonzero
 on any failed invariant. Set API_URL and DEMO_PASSWORD in the process environment.
@@ -61,8 +61,8 @@ def main():
     suffix = secrets.token_hex(5)
     request("GET", "/projects", token="", workspace="", expected=401)
     check("anonymous requests rejected")
-    request("POST", "/auth/login", {"email": "admin@estateos.demo", "password": secrets.token_hex(24)}, token="", workspace="", expected=401)
-    login = request("POST", "/auth/login", {"email": "admin@estateos.demo", "password": PASSWORD}, token="", workspace="")
+    request("POST", "/auth/login", {"email": "admin@estraos.demo", "password": secrets.token_hex(24)}, token="", workspace="", expected=401)
+    login = request("POST", "/auth/login", {"email": "admin@estraos.demo", "password": PASSWORD}, token="", workspace="")
     TOKEN = login["token"]
     WORKSPACE = login["workspaces"][0]["id"]
     request("GET", "/auth/me")
@@ -140,7 +140,7 @@ def main():
     request("POST", f"/documents/{did}/unpublish", {})
     request("GET", "/notifications")
     check("notifications and audit available", len(items(request("GET", "/audit-logs"))) > 0)
-    agent_login = request("POST", "/auth/login", {"email": "agent@estateos.demo", "password": PASSWORD}, token="", workspace="")
+    agent_login = request("POST", "/auth/login", {"email": "agent@estraos.demo", "password": PASSWORD}, token="", workspace="")
     request("POST", "/projects", project_payload, token=agent_login["token"], expected=403)
     request("GET", "/audit-logs", token=agent_login["token"], expected=403)
     check("agent role forbidden from inventory writes and audit")

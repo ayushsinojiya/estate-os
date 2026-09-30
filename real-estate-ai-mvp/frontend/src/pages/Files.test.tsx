@@ -36,7 +36,8 @@ describe("knowledge sources", () => {
     const user = userEvent.setup();
     mount();
     expect(await screen.findByText("v1 · live v1")).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Filter by status"), "ACTIVE");
+    await user.click(screen.getByRole("combobox", { name: "Filter by status" }));
+    await user.click(screen.getByRole("option", { name: "Active" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.includes("status=ACTIVE"))).toBe(true));
   });
 

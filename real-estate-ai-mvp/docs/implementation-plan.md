@@ -10,7 +10,7 @@ RAG/voice/notification contracts and credentials are unavailable. Provide explic
 
 ## Ownership
 
-Backend engineer owns backend except integration package/tests. Frontend engineer owns frontend. Integration engineer owns com.estateos.integration and its tests, docs/integration.md. Coordinator owns infrastructure/docs, end-to-end QA, security review and ZIP. Coordinate any shared-boundary edits.
+Backend engineer owns backend except integration package/tests. Frontend engineer owns frontend. Integration engineer owns com.estraos.integration and its tests, docs/integration.md. Coordinator owns infrastructure/docs, end-to-end QA, security review and ZIP. Coordinate any shared-boundary edits.
 
 ## Acceptance checklist
 
@@ -45,7 +45,7 @@ ADMIN/MANAGER manage projects/units/documents and view audit. All roles manage l
 
 ## Integration contract
 
-Package com.estateos.integration. Interfaces accept and return Map<String,Object> for provisional provider payloads. Each method takes one Map. Caller supplies workspaceId/projectId/resourceId/language and published scope.
+Package com.estraos.integration. Interfaces accept and return Map<String,Object> for provisional provider payloads. Each method takes one Map. Caller supplies workspaceId/projectId/resourceId/language and published scope.
 
 - RagServiceClient: searchKnowledgeBase, indexPublishedContent, reindexDocument, getProcessingStatus, unpublishContent.
 - VoiceAgentServiceClient: startOutboundCall, getCallDetails.

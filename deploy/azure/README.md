@@ -18,7 +18,7 @@ Three containers on Azure Container Apps, one managed PostgreSQL server, one Azu
                    │                                 │
                    ▼                                 ▼
         Azure Database for              Azure Files share
-        PostgreSQL (estateos)           (do-not-call list, call registry)
+        PostgreSQL (estraos)           (do-not-call list, call registry)
 ```
 
 The two services call each other over their public hostnames:

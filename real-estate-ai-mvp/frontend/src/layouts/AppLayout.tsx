@@ -12,16 +12,15 @@ import {
   Menu,
   Phone,
   Settings,
-  ShieldCheck,
   Sparkles,
   Users,
   FolderOpen,
   X,
-} from "lucide-react";
+} from "../components/icons";
 import { useAuth } from "../hooks/useAuth";
+import { CustomSelect } from "../components/CustomSelect";
 const navigation = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { to: "/projects", label: "Projects & inventory", icon: Building2 },
   { to: "/leads", label: "Leads", icon: Users },
   { to: "/calls", label: "Conversations", icon: Phone },
   { to: "/recommendations", label: "Recommendations", icon: Sparkles },
@@ -30,8 +29,7 @@ const navigation = [
   { to: "/files", label: "File management", icon: FolderOpen },
 ];
 export function AppLayout() {
-  const { session, workspaceId, switchWorkspace, logout, canManage } =
-    useAuth();
+  const { session, workspaceId, switchWorkspace, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -77,7 +75,7 @@ export function AppLayout() {
               <Building2 size={23} />
             </span>
             <span>
-              Estate<span className="font-normal">OS</span>
+              Estra<span className="font-normal">OS</span>
             </span>
           </Link>
           <button
@@ -91,23 +89,6 @@ export function AppLayout() {
           >
             <X size={19} />
           </button>
-        </div>
-        <div className="workspace-select">
-          <label htmlFor="workspace">YOUR WORKSPACE</label>
-          <select
-            id="workspace"
-            value={workspaceId}
-            onChange={(e) => {
-              switchWorkspace(e.target.value);
-              closeNavigation();
-            }}
-          >
-            {session?.workspaces.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
         </div>
         <div className="nav-caption">WORKSPACE</div>
         <nav aria-label="Main navigation">
@@ -135,24 +116,6 @@ export function AppLayout() {
               View handovers <ArrowUpRight size={14} />
             </Link>
           </div>
-          <NavLink
-            to="/notifications"
-            className="nav-item"
-            onClick={closeNavigation}
-          >
-            <Bell size={18} />
-            Notifications
-          </NavLink>
-          {canManage && (
-            <NavLink
-              to="/audit-logs"
-              className="nav-item"
-              onClick={closeNavigation}
-            >
-              <ShieldCheck size={18} />
-              Audit trail
-            </NavLink>
-          )}
           <NavLink
             to="/settings/profile"
             className="nav-item"
@@ -195,10 +158,15 @@ export function AppLayout() {
             <strong className="text-base">{current}</strong>
           </div>
           <div className="flex items-center gap-4">
-            <span className="workspace-live hidden md:flex">
-              <span/>
-              Connected workspace
-            </span>
+            <div className="workspace-switcher">
+              <CustomSelect
+                id="workspace"
+                label="Connected workspace"
+                value={workspaceId}
+                options={(session?.workspaces || []).map((w) => ({ value: w.id, label: w.name }))}
+                onChange={switchWorkspace}
+              />
+            </div>
             <Link
               to="/notifications"
               aria-label="Notifications"
@@ -219,7 +187,7 @@ export function AppLayout() {
           <Outlet />
         </main>
         <footer>
-          EstateOS <span>Built around better customer journeys.</span>
+          EstraOS <span>Built around better customer journeys.</span>
         </footer>
       </div>
     </div>

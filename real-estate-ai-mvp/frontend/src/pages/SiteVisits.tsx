@@ -5,7 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { CalendarDays, Plus } from "lucide-react";
+import { CalendarDays, Plus } from "../components/icons";
 import { useApi } from "../hooks/useApi";
 import { useList } from "../hooks/useList";
 import {
@@ -32,6 +32,23 @@ import { write } from "../api/client";
 import { queryClient } from "../services/query";
 import { date, list } from "../utils/format";
 import type { Entity } from "../types";
+
+function visitStatusPayload(visit: Record<string, any>, status: string) {
+  return {
+    leadId: visit.leadId,
+    projectId: visit.projectId,
+    unitId: visit.unitId ?? null,
+    agentId: visit.agentId,
+    scheduledAt: visit.scheduledAt,
+    durationMinutes: visit.durationMinutes,
+    notes: visit.notes ?? null,
+    ...(visit.confirmationStatus
+      ? { confirmationStatus: visit.confirmationStatus }
+      : {}),
+    status,
+  };
+}
+
 export function useVisitOptions() {
   const members = useApi("/members");
   return {
@@ -379,7 +396,7 @@ export function SiteVisitDetail() {
             onSubmit={async () => {
               await write(
                 `/site-visits/${id}`,
-                { ...d, status: action },
+                visitStatusPayload(d, action),
                 "PUT",
               );
               await queryClient.invalidateQueries();

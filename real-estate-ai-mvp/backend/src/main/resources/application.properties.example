@@ -1,9 +1,9 @@
 server.port=${PORT:8080}
 server.error.include-message=never
 
-spring.application.name=estateos-api
+spring.application.name=estraos-api
 spring.profiles.active=${SPRING_PROFILES_ACTIVE:demo}
-spring.datasource.url=${DATABASE_URL:jdbc:postgresql://localhost:5432/estate_os}
+spring.datasource.url=${DATABASE_URL:jdbc:postgresql://localhost:5432/estra_os}
 spring.datasource.username=${DATABASE_USERNAME:postgres}
 spring.datasource.password=${DATABASE_PASSWORD:REPLACE_WITH_DATABASE_PASSWORD}
 spring.jpa.open-in-view=false

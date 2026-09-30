@@ -1,4 +1,4 @@
-# EstateOS
+# EstraOS
 
 A multi-workspace real-estate operations MVP for capturing and qualifying leads, reviewing AI call results, recommending available properties, scheduling site visits, and handing customers to a human real-estate agent. The buying and legal process is outside this application.
 
@@ -9,6 +9,13 @@ A multi-workspace real-estate operations MVP for capturing and qualifying leads,
 - `database/`: migration distribution and development seed instructions.
 - `docs/`: architecture, API, setup, integration contracts, verification and troubleshooting.
 - `scripts/`: repeatable acceptance verification and source packaging utilities.
+
+## Docker quick start
+
+The recommended local workflow is the root [`LOCAL_SETUP.md`](../LOCAL_SETUP.md).
+It describes the full stack and the individual frontend, backend, and knowledge-service
+Compose files. From this directory, copy `.env.example` to `.env`, replace every
+`REPLACE_...` value, then run `docker compose up --build -d`.
 
 ## Prerequisites
 
@@ -40,7 +47,7 @@ Open `http://localhost:5173`. Set `VITE_API_URL=http://localhost:8080/api/v1` fo
 
 ### Development accounts
 
-With demo seeding enabled, sign in using `admin@estateos.demo`, `manager@estateos.demo`, or `agent@estateos.demo` and the `DEMO_PASSWORD` you provided. No password is distributed. The demo workspace and mock call/delivery behavior are labeled. See backend documentation for seeding safeguards and password requirements.
+With demo seeding enabled, sign in using `admin@estraos.demo`, `manager@estraos.demo`, or `agent@estraos.demo` and the `DEMO_PASSWORD` you provided. No password is distributed. The demo workspace and mock call/delivery behavior are labeled. See backend documentation for seeding safeguards and password requirements.
 
 ## Tests and builds
 
@@ -71,18 +78,18 @@ This creates verification records and does not delete them. Never run it against
 Run from the project root:
 
 ```sh
-docker build -t estateos-api ./backend
-docker build --build-arg VITE_API_URL=http://localhost:8080/api/v1 -t estateos-web ./frontend
+docker build -t estraos-api ./backend
+docker build --build-arg VITE_API_URL=http://localhost:8080/api/v1 -t estraos-web ./frontend
 ```
 
 Create a private runtime environment file from `backend/.env.example`, replace all placeholders, and keep it outside versioned/distributed source. Then:
 
 ```sh
-docker run --rm --env-file backend.env -p 8080:8080 estateos-api
-docker run --rm -p 3000:8080 estateos-web
+docker run --rm --env-file backend.env -p 8080:8080 estraos-api
+docker run --rm -p 3000:8080 estraos-web
 ```
 
-Set `CORS_ALLOWED_ORIGINS=http://localhost:3000` for the second arrangement. The browser must be able to reach `VITE_API_URL`; Docker-internal hostnames are generally unsuitable for browser URLs. Configure PostgreSQL and provider URLs so they are reachable from the backend container. Networking, external services and database lifecycle are operator-managed. No root Compose workflow is required.
+Set `CORS_ALLOWED_ORIGINS=http://localhost:3000` for the second arrangement. The browser must be able to reach `VITE_API_URL`; Docker-internal hostnames are generally unsuitable for browser URLs. The root Compose workflow manages the local databases and service network. External providers remain optional and must be configured explicitly before using real integrations.
 
 ## API and integrations
 

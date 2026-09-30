@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../services/query";
 import { AuthProvider } from "../hooks/useAuth";
-import { ToastProvider, RecordForm } from "../components/ui";
+import { Filters, ToastProvider, RecordForm } from "../components/ui";
+import { AsyncSelect } from "../components/AsyncSelect";
+import { DateTimePicker } from "../components/DateTimePicker";
 import { App } from "../routes/App";
 import { money } from "../utils/format";
 import { visitFields, leadOptions, unitFields } from "../features/fields";
 const session = {
   token: "test-token",
-  user: { id: "1", name: "Anaya Shah", email: "admin@estateos.demo" },
+  user: { id: "1", name: "Anaya Shah", email: "admin@estraos.demo" },
   workspaces: [{ id: "1", name: "Demo workspace", role: "ADMIN" }],
 };
 const lead = {
@@ -42,8 +44,8 @@ function json(data: unknown, status = 200) {
 }
 function mount(path: string, authenticated = true) {
   if (authenticated) {
-    sessionStorage.setItem("estateos.session", JSON.stringify(session));
-    sessionStorage.setItem("estateos.workspace", "1");
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
   }
   return render(
     <QueryClientProvider client={queryClient}>
@@ -56,6 +58,10 @@ function mount(path: string, authenticated = true) {
       </AuthProvider>
     </QueryClientProvider>,
   );
+}
+async function chooseOption(user: ReturnType<typeof userEvent.setup>, label: RegExp | string, option: RegExp | string) {
+  await user.click(screen.getByRole("combobox", { name: label }));
+  await user.click(screen.getByRole("option", { name: option }));
 }
 beforeEach(() => {
   queryClient.clear();
@@ -109,6 +115,14 @@ describe("authenticated workspace flows", () => {
     expect(await screen.findByRole("heading", { name: "File management" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument();
   });
+  it("places the workspace switcher in the header", async () => {
+    mount("/dashboard");
+
+    expect(await screen.findByRole("combobox", { name: "Connected workspace" })).toHaveTextContent(
+      "Demo workspace",
+    );
+    expect(screen.queryByRole("combobox", { name: "Your workspace" })).not.toBeInTheDocument();
+  });
   it("protects workspace routes from unauthenticated visitors", async () => {
     mount("/projects", false);
     expect(
@@ -116,10 +130,18 @@ describe("authenticated workspace flows", () => {
     ).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+  it("restores an authenticated session shared with a new tab", async () => {
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
+
+    mount("/dashboard", false);
+
+    expect(await screen.findByRole("heading", { name: /Good to see you/ })).toBeInTheDocument();
+  });
   it("signs in and sends the returned workspace context on API calls", async () => {
     const user = userEvent.setup();
     mount("/login", false);
-    await user.type(screen.getByLabelText("Work email"), "admin@estateos.demo");
+    await user.type(screen.getByLabelText("Work email"), "admin@estraos.demo");
     await user.type(screen.getByLabelText("Password"), "example-test-password");
     await user.click(
       screen.getByRole("button", { name: "Sign in to workspace" }),
@@ -194,14 +216,14 @@ describe("authenticated workspace flows", () => {
     const user = userEvent.setup();
     mount("/site-visits?create=true&leadId=11");
     await screen.findByRole("dialog");
-    await waitFor(() =>
-      expect(
-        screen.getByRole("option", { name: /The Green Residences/ }),
-      ).toBeInTheDocument(),
+    await user.click(screen.getByRole("combobox", { name: "Project" }));
+    await user.click(
+      await screen.findByRole("option", { name: /The Green Residences/ }),
     );
-    await user.selectOptions(screen.getByLabelText(/^Project/), "21");
-    await user.selectOptions(screen.getByLabelText(/^Assigned agent/), "3");
-    await user.type(screen.getByLabelText(/^Date & time/), "2030-10-12T10:00");
+    await chooseOption(user, /^Assigned agent/, /Dev Mehta/);
+    await user.click(screen.getByRole("button", { name: "Select date and time" }));
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.click(screen.getAllByRole("button", { name: /^\d+ \w+ \d{4}$/ })[0]);
     await user.click(screen.getByRole("button", { name: "Confirm booking" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -215,6 +237,33 @@ describe("authenticated workspace flows", () => {
     expect(
       await screen.findByRole("heading", { name: "Site visit details" }),
     ).toBeInTheDocument();
+  });
+  it("changes a visit status without posting response-only fields", async () => {
+    const user = userEvent.setup();
+    mount("/site-visits/31");
+
+    await user.click(await screen.findByRole("button", { name: "Mark completed" }));
+    await user.click(screen.getByRole("button", { name: "Confirm status change" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/site-visits/31",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+    const [, request] = fetchMock.mock.calls.find(
+      ([url, init]) => url === "/api/v1/site-visits/31" && init?.method === "PUT",
+    )!;
+    expect(JSON.parse(String(request.body))).toEqual({
+      leadId: "11",
+      projectId: "21",
+      unitId: null,
+      agentId: "3",
+      scheduledAt: "2030-10-12T10:00:00Z",
+      durationMinutes: 60,
+      notes: null,
+      status: "COMPLETED",
+    });
   });
   it("shows a recoverable API error", async () => {
     fetchMock.mockImplementation(async (url: string) =>
@@ -263,17 +312,17 @@ describe("form validation", () => {
         onSubmit={vi.fn()}
       />,
     );
-    await user.selectOptions(screen.getByLabelText("Building / tower *"), "1");
-    await user.selectOptions(screen.getByLabelText("Catalog floor"), "10");
+    await chooseOption(user, "Building / tower", /Tower A/);
+    await chooseOption(user, "Catalog floor", /Floor 3/);
+    await user.click(screen.getByRole("combobox", { name: "Catalog floor" }));
     expect(
       screen.queryByRole("option", { name: "Floor 4" }),
     ).not.toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Building / tower *"), "2");
-    expect(screen.getByLabelText("Catalog floor")).toHaveValue("");
+    await user.keyboard("{Escape}");
+    await chooseOption(user, "Building / tower", /Tower B/);
+    expect(screen.getByRole("combobox", { name: "Catalog floor" })).toHaveTextContent("Select catalog floor");
+    await user.click(screen.getByRole("combobox", { name: "Catalog floor" }));
     expect(screen.getByRole("option", { name: "Floor 4" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("option", { name: "Corner apartment" }),
-    ).toBeInTheDocument();
   });
   it("shows selected property, agent and full requirements in a handover", async () => {
     const user = userEvent.setup();
@@ -342,8 +391,8 @@ describe("form validation", () => {
       }
       return original(url, init);
     });
-    sessionStorage.setItem("estateos.session", JSON.stringify(session));
-    sessionStorage.setItem("estateos.workspace", "1");
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
     render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
@@ -357,16 +406,17 @@ describe("form validation", () => {
         </AuthProvider>
       </QueryClientProvider>,
     );
-    expect(
-      await screen.findByRole("option", { name: /Saved distant lead/ }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Saved distant lead/)).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "Customer" }));
     await user.click(
       screen.getByRole("button", { name: "Next customer options" }),
     );
     expect(
       await screen.findByRole("option", { name: /Beyond first hundred/ }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Customer")).toHaveValue("999");
+    expect(screen.getByRole("combobox", { name: "Customer" })).toHaveTextContent(
+      "Saved distant lead",
+    );
     await user.type(
       screen.getByRole("textbox", { name: "Search customer options" }),
       "Beyond",
@@ -377,6 +427,172 @@ describe("form validation", () => {
         expect.anything(),
       ),
     );
+  });
+  it("uses one searchable combobox for remote choices", async () => {
+    const user = userEvent.setup();
+    const selected = vi.fn();
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AsyncSelect
+            id="customer"
+            label="Customer"
+            value=""
+            onChange={selected}
+            remote={leadOptions}
+          />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Customer" }));
+    const search = screen.getByRole("textbox", {
+      name: "Search customer options",
+    });
+    await user.type(search, "Riya");
+    expect(search).toHaveAttribute("aria-controls", "customer-options");
+    expect(search).toHaveAttribute("aria-activedescendant", "customer-option-0");
+    expect(await screen.findByRole("option", { name: /Riya Patel/ })).toHaveAttribute(
+      "id",
+      "customer-option-0",
+    );
+    await user.click(screen.getByRole("option", { name: /Riya Patel/ }));
+
+    expect(selected).toHaveBeenCalledWith("11");
+    expect(screen.queryAllByRole("combobox")).toHaveLength(1);
+  });
+  it("keeps multiple remote choices in the open combobox", async () => {
+    const user = userEvent.setup();
+    const selected = vi.fn();
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AsyncSelect
+            id="customers"
+            label="Customers"
+            value={[]}
+            multiple
+            onChange={selected}
+            remote={leadOptions}
+          />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Customers" }));
+    await user.click(await screen.findByRole("option", { name: /Riya Patel/ }));
+
+    expect(selected).toHaveBeenCalledWith(["11"]);
+  });
+  it("keeps fallback labels paired with their missing multi-select values", async () => {
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AsyncSelect
+            id="customers"
+            label="Customers"
+            value={["999", "11"]}
+            multiple
+            onChange={vi.fn()}
+            remote={leadOptions}
+          />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText(/Riya Patel/);
+    expect(screen.getByLabelText("Selected customers")).toHaveTextContent(
+      "Selected record (999)",
+    );
+  });
+  it("does not submit an empty required remote choice", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    localStorage.setItem("estraos.session", JSON.stringify(session));
+    localStorage.setItem("estraos.workspace", "1");
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RecordForm
+            fields={[{ name: "leadId", label: "Customer", required: true, remote: leadOptions }]}
+            onSubmit={submit}
+          />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(screen.getByRole("combobox", { name: "Customer" })).toHaveAttribute(
+      "aria-required",
+      "true",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Customer is required.");
+    expect(submit).not.toHaveBeenCalled();
+  });
+  it("selects a calendar day while retaining the chosen time", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <DateTimePicker
+        id="scheduledAt"
+        label="Date & time"
+        value="2030-10-12T10:00"
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Select date and time" }));
+    expect(screen.getByText("October 2030")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "15 October 2030" }));
+
+    expect(onChange).toHaveBeenCalledWith("2030-10-15T10:00");
+  });
+  it("preserves exact minutes and closes the calendar with Escape", async () => {
+    const user = userEvent.setup();
+    render(
+      <DateTimePicker
+        id="scheduledAt"
+        label="Date & time"
+        value="2030-10-12T10:07"
+        onChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Select date and time" }));
+    expect(screen.getByRole("textbox", { name: "Minutes" })).toHaveValue("07");
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Choose date & time" })).not.toBeInTheDocument();
+  });
+  it("uses inline time fields instead of nested dropdown menus", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <DateTimePicker
+        id="visit-at"
+        label="Date & time"
+        value="2030-10-12T09:07"
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Select date and time" }));
+    expect(screen.getByRole("textbox", { name: "Hour" })).toHaveValue("09");
+    expect(screen.getByRole("textbox", { name: "Minutes" })).toHaveValue("07");
+    expect(screen.queryByRole("combobox", { name: "Hour" })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByRole("textbox", { name: "Minutes" }));
+    await user.type(screen.getByRole("textbox", { name: "Minutes" }), "30");
+    await user.tab();
+    expect(onChange).toHaveBeenLastCalledWith("2030-10-12T09:30");
   });
   it("requests chronological site visit ordering before pagination", async () => {
     mount("/site-visits");
@@ -463,20 +679,20 @@ describe("form validation", () => {
       ],
     ).filter((f) => ["projectId", "unitId"].includes(f.name));
     render(<RecordForm fields={fields} onSubmit={vi.fn()} />);
-    const projectSelect = screen.getByLabelText("Project *");
-    const unitSelect = screen.getByLabelText("Unit (optional)");
+    const unitSelect = screen.getByRole("combobox", { name: "Unit (optional)" });
     expect(unitSelect).toBeDisabled();
-    await user.selectOptions(projectSelect, "21");
+    await chooseOption(user, "Project", "Green");
     expect(
       screen.queryByRole("option", { name: /B-301/ }),
     ).not.toBeInTheDocument();
-    await user.selectOptions(unitSelect, "101");
-    expect(unitSelect).toHaveValue("101");
-    await user.selectOptions(projectSelect, "22");
-    expect(unitSelect).toHaveValue("");
+    await chooseOption(user, "Unit (optional)", /A-301/);
+    expect(unitSelect).toHaveTextContent(/A-301/);
+    await chooseOption(user, "Project", "River");
+    expect(unitSelect).toHaveTextContent("Select unit (optional)");
     expect(
       screen.queryByRole("option", { name: /A-301/ }),
     ).not.toBeInTheDocument();
+    await user.click(unitSelect);
     expect(screen.getByRole("option", { name: /B-301/ })).toBeInTheDocument();
   });
   it("preserves lakh and crore precision in compact prices", () => {
@@ -526,5 +742,33 @@ describe("form validation", () => {
     );
     expect(screen.getByLabelText("Email *")).toBeRequired();
     expect(screen.getByLabelText("Email *")).toBeInvalid();
+  });
+  it("uses one bordered field for record search", () => {
+    render(
+      <Filters
+        search=""
+        onSearch={vi.fn()}
+        status=""
+        onStatus={vi.fn()}
+        statuses={[]}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Search records" })).toHaveClass(
+      "search-box-input",
+    );
+  });
+  it("prevents arrow keys from stepping number fields", () => {
+    render(
+      <RecordForm
+        fields={[{ name: "duration", label: "Duration", type: "number" }]}
+        initial={{ duration: 60 }}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(
+      fireEvent.keyDown(screen.getByLabelText("Duration"), { key: "ArrowUp" }),
+    ).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 # External service integration
 
-The existing RAG, Voice Agent and notification service API contracts, URLs and credentials were not provided. The REST mappings below are **provisional contracts**, not verified provider APIs. Replace the mappings in `backend/src/main/java/com/estateos/integration/Rest*ServiceClient.java` to match the actual services. The application does not implement an embedding engine, semantic search engine, voice agent, prompts or provider administration.
+The existing RAG, Voice Agent and notification service API contracts, URLs and credentials were not provided. The REST mappings below are **provisional contracts**, not verified provider APIs. Replace the mappings in `backend/src/main/java/com/estraos/integration/Rest*ServiceClient.java` to match the actual services. The application does not implement an embedding engine, semantic search engine, voice agent, prompts or provider administration.
 
 ## Configuration
 

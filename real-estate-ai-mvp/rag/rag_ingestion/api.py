@@ -10,7 +10,7 @@ from .service import Service, ActionError, MAX_BYTES
 
 def create_app(settings=None):
     settings = settings or Settings.from_env()
-    app = FastAPI(title='EstateOS Knowledge Ingestion', version='0.1.0')
+    app = FastAPI(title='EstraOS Knowledge Ingestion', version='0.1.0')
     storage = LocalStorage(settings.storage_path)
 
     def authorized(authorization: str = Header(default='')):

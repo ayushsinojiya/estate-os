@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { ArrowRight, Building2, Check, LoaderCircle } from "lucide-react";
+import { ArrowRight, Building2, Check, LoaderCircle } from "../components/icons";
 import { useAuth } from "../hooks/useAuth";
 import { ErrorState } from "../components/ui";
 export function Login() {
@@ -31,7 +31,7 @@ export function Login() {
           <span className="brand-icon">
             <Building2 />
           </span>
-          EstateOS
+          EstraOS
         </div>
         <div>
           <span className="eyebrow text-teal-200">REAL ESTATE. CONNECTED.</span>
@@ -65,7 +65,7 @@ export function Login() {
         <div className="w-full max-w-sm">
           <div className="eyebrow">WELCOME BACK</div>
           <h2>Let’s get you settled in.</h2>
-          <p className="text-muted mb-8">Sign in to your EstateOS workspace.</p>
+          <p className="text-muted mb-8">Sign in to your EstraOS workspace.</p>
           {error != null && <ErrorState error={error} />}
           <form onSubmit={submit} className="space-y-5">
             <div>
@@ -110,8 +110,8 @@ export function Login() {
           <div className="login-demo">
             <strong>Exploring the demo?</strong>
             <p>
-              Use admin@estateos.demo, manager@estateos.demo, or
-              agent@estateos.demo with the password configured by your
+              Use admin@estraos.demo, manager@estraos.demo, or
+              agent@estraos.demo with the password configured by your
               administrator.
             </p>
             <p>

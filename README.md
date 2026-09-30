@@ -5,7 +5,7 @@ Two services that were built separately and are now connected.
 | | Path | Stack |
 | --- | --- | --- |
 | **Voice agent** ("Riya") | `last try/real-estate-voice-agent` | Python, FastAPI, VoiceLink telephony |
-| **CRM** (EstateOS) | `real-estate-ai-mvp` | Java 21 / Spring Boot, PostgreSQL, React |
+| **CRM** (EstraOS) | `real-estate-ai-mvp` | Java 21 / Spring Boot, PostgreSQL, React |
 
 ## How they talk
 
@@ -30,6 +30,10 @@ Full contract, including what is **not** connected yet:
 [`real-estate-ai-mvp/docs/integration.md`](real-estate-ai-mvp/docs/integration.md).
 
 ## Running locally
+
+For the Docker-based full stack or individual service commands, credential templates,
+ports, and reset instructions, follow [LOCAL_SETUP.md](LOCAL_SETUP.md). It is the
+recommended local setup path.
 
 ```bash
 # CRM — needs a PostgreSQL on :5432

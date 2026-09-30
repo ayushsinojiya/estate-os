@@ -1,8 +1,9 @@
-name: estateos-knowledge
+name: estraos-knowledge
 x-environment: &environment
   RAG_DATABASES_JSON: ${RAG_DATABASES_JSON:?Set workspace ID to dedicated DSN JSON in .env}
   RAG_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set the same service token as CRM}
   RAG_STORAGE_PATH: /data/sources
+  RAG_POLL_SECONDS: ${RAG_POLL_SECONDS:-2}
   RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
   RAG_EMBEDDING_REVISION: ${RAG_EMBEDDING_REVISION:-614241f622f53c4eeff9890bdc4f31cfecc418b3}
   RAG_OCR_LANGUAGES: eng+hin+mar+guj
@@ -12,15 +13,15 @@ services:
   knowledge-db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: estateos_knowledge
-      POSTGRES_USER: knowledge
+      POSTGRES_DB: ${RAG_POSTGRES_DB:-estraos_knowledge}
+      POSTGRES_USER: ${RAG_POSTGRES_USER:-knowledge}
       POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?Set a local knowledge DB password}
     ports:
-      - '127.0.0.1:55432:5432'
+      - '127.0.0.1:${RAG_DB_PORT:-55432}:5432'
     volumes:
       - knowledge-db:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U knowledge -d estateos_knowledge']
+      test: ['CMD-SHELL', 'pg_isready -U knowledge -d estraos_knowledge']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -35,7 +36,7 @@ services:
     command: ['api', '--host', '0.0.0.0']
     environment: *environment
     ports:
-      - '127.0.0.1:8090:8090'
+      - '127.0.0.1:${RAG_PORT:-8090}:8090'
     volumes:
       - source-files:/data
     depends_on:

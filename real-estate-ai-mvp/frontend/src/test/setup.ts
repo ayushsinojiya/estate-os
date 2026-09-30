@@ -15,6 +15,6 @@ Object.defineProperty(HTMLDialogElement.prototype, "close", {
 });
 afterEach(() => {
   cleanup();
-  sessionStorage.clear();
+  localStorage.clear();
   vi.unstubAllGlobals();
 });

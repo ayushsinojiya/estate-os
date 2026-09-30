@@ -7,10 +7,10 @@
         <version>3.5.16</version>
         <relativePath/>
     </parent>
-    <groupId>com.estateos</groupId>
-    <artifactId>estateos-api</artifactId>
+    <groupId>com.estraos</groupId>
+    <artifactId>estraos-api</artifactId>
     <version>1.0.0</version>
-    <name>EstateOS API</name>
+    <name>EstraOS API</name>
     <properties>
         <java.version>21</java.version>
     </properties>

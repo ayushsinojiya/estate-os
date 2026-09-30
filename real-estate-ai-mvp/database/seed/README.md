@@ -9,17 +9,17 @@ The backend's demo-profile initializer supplies repeatable application seed reco
 Run it only against a local disposable database after the Flyway schema and demo profile have created the workspace:
 
 ```sh
-psql -v ON_ERROR_STOP=1 -U postgres -d estate_os -f database/seed/pune_synthetic_properties.sql
+psql -v ON_ERROR_STOP=1 -U postgres -d estra_os -f database/seed/pune_synthetic_properties.sql
 ```
 
 The script is idempotent: a rerun inserts only missing records and verifies that exactly 1,000 of its synthetic units are present. If the local workspace has a different name, edit `target_workspace_name` at the top of the SQL file before running it.
 
 | Account | Role |
 | --- | --- |
-| `admin@estateos.demo` | ADMIN |
-| `manager@estateos.demo` | MANAGER |
-| `agent@estateos.demo` | REAL_ESTATE_AGENT |
-| `agent2@estateos.demo` | REAL_ESTATE_AGENT in the second workspace only |
+| `admin@estraos.demo` | ADMIN |
+| `manager@estraos.demo` | MANAGER |
+| `agent@estraos.demo` | REAL_ESTATE_AGENT |
+| `agent2@estraos.demo` | REAL_ESTATE_AGENT in the second workspace only |
 
 Use the same locally supplied demo password for the initial four accounts. The admin belongs to both demo workspaces; the manager and first agent belong to the populated first workspace. No working password or signing secret is included in source. Set `SPRING_PROFILES_ACTIVE=demo` and `INTEGRATIONS_MODE=mock` only for development. Start the application with the database and JWT environment configured as documented in the root README. Existing passwords are preserved on subsequent starts.
 

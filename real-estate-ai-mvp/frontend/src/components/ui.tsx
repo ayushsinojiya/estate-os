@@ -10,11 +10,13 @@ import {
   LoaderCircle,
   Search,
   X,
-} from "lucide-react";
+} from "./icons";
 import { Link } from "react-router-dom";
 import type { Entity, Field, Page } from "../types";
 import { label } from "../utils/format";
 import { AsyncSelect } from "./AsyncSelect";
+import { DateTimePicker } from "./DateTimePicker";
+import { CustomSelect } from "./CustomSelect";
 export function Badge({ value }: { value: unknown }) {
   const s = String(value || "UNKNOWN");
   return (
@@ -188,6 +190,13 @@ export function RecordForm({
               : null
             : value || null;
     }
+    const missing = fields.find(
+      (field) => field.required && (values[field.name] == null || values[field.name] === ""),
+    );
+    if (missing) {
+      setError(new Error(`${missing.label} is required.`));
+      return;
+    }
     for (const [min, max] of [
       ["budgetMin", "budgetMax"],
       ["areaMin", "areaMax"],
@@ -275,20 +284,33 @@ export function RecordForm({
                     });
                   }}
                 />
+              ) : f.type === "datetime-local" ? (
+                <DateTimePicker
+                  id={f.name}
+                  label={f.label}
+                  value={String(value)}
+                  required={f.required}
+                  disabled={props.disabled}
+                  onChange={(nextValue) =>
+                    setValues((previous) => ({ ...previous, [f.name]: nextValue }))
+                  }
+                />
               ) : f.options ? (
-                <select {...props}>
-                  <option value="">Select {f.label.toLowerCase()}</option>
-                  {f.options
+                <CustomSelect
+                  id={f.name}
+                  label={f.label}
+                  value={String(value)}
+                  required={f.required}
+                  disabled={props.disabled}
+                  placeholder={`Select ${f.label.toLowerCase()}`}
+                  onChange={(nextValue) => props.onChange({ target: { value: nextValue } } as React.ChangeEvent<HTMLSelectElement>)}
+                  options={f.options
                     .filter(
                       (o) =>
                         !f.dependsOn || o.parentValue === values[f.dependsOn],
                     )
-                    .map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                </select>
+                    .map((o) => ({ value: o.value, label: o.label }))}
+                />
               ) : f.type === "textarea" ? (
                 <textarea {...props} rows={f.name === "content" ? 10 : 3} />
               ) : (
@@ -298,6 +320,10 @@ export function RecordForm({
                   min={f.min}
                   max={f.max}
                   step={f.step || "any"}
+                  onKeyDown={(event) => {
+                    if (f.type === "number" && ["ArrowUp", "ArrowDown"].includes(event.key))
+                      event.preventDefault();
+                  }}
                 />
               )}{" "}
               {f.hint && <p className="field-hint">{f.hint}</p>}
@@ -406,41 +432,16 @@ export function Filters({
       <div className="search-box">
         <Search size={17} />
         <input
+          className="search-box-input"
           aria-label="Search records"
           placeholder="Search records…"
           value={search}
           onChange={(e) => onSearch(e.target.value)}
         />
       </div>
-      <select
-        aria-label="Filter by status"
-        value={status}
-        onChange={(e) => onStatus(e.target.value)}
-      >
-        <option value="">All statuses</option>
-        {statuses.map((s) => (
-          <option key={s} value={s}>
-            {label(s)}
-          </option>
-        ))}
-      </select>
+      <CustomSelect id="filter-status" label="Filter by status" value={status} onChange={onStatus} placeholder="All statuses" options={statuses.map((s) => ({ value: s, label: label(s) }))} />
       {onSort && (
-        <select
-          aria-label="Sort records"
-          value={sort}
-          onChange={(e) => onSort(e.target.value)}
-        >
-          {(
-            sortOptions || [
-              { value: "createdAt,desc", label: "Newest first" },
-              { value: "createdAt,asc", label: "Oldest first" },
-            ]
-          ).map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <CustomSelect id="sort-records" label="Sort records" value={sort || ""} onChange={onSort} options={sortOptions || [{ value: "createdAt,desc", label: "Newest first" }, { value: "createdAt,asc", label: "Oldest first" }]} />
       )}
     </div>
   );

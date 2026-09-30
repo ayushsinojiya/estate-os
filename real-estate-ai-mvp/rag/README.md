@@ -1,4 +1,4 @@
-# EstateOS property knowledge ingestion
+# EstraOS property knowledge ingestion
 
 Implements `../../rag_plans/rag.md` plus `rag_property_type_amendment.md`.
 This service ingests and indexes knowledge; it **does not change the voice agent or
@@ -50,7 +50,7 @@ Do not point the database volume or DSN at the existing CRM data directory.
 
 For more clients, provision another database on this server and append its DSN to
 the JSON map. Each database is bound to exactly one CRM workspace. Re-run
-`estateos-rag migrate` after adding a store. Migrations are idempotent; running
+`estraos-rag migrate` after adding a store. Migrations are idempotent; running
 them twice does not reset source data. Keep application connections off while
 upgrading a deployed schema.
 
@@ -62,10 +62,10 @@ Python 3.12 recommended. PostgreSQL must have the real `vector` extension instal
 uv venv .venv
 uv pip install --python .venv/Scripts/python.exe torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
 uv pip install --python .venv/Scripts/python.exe -c constraints.txt -e '.[test]'
-.venv/Scripts/estateos-rag.exe migrate
-.venv/Scripts/estateos-rag.exe api
+.venv/Scripts/estraos-rag.exe migrate
+.venv/Scripts/estraos-rag.exe api
 # Separate terminal, same .env and storage path:
-.venv/Scripts/estateos-rag.exe worker
+.venv/Scripts/estraos-rag.exe worker
 ```
 
 The CLI loads the current directory's `.env` without overriding existing variables.
@@ -123,7 +123,7 @@ rejections: upload an unencrypted replacement, not Retry.
 Changing embedding model/dimension requires full re-embedding, never mixed models:
 
 ```powershell
-.venv/Scripts/estateos-rag.exe reembed --workspace 1 --actor 7 --model intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3
+.venv/Scripts/estraos-rag.exe reembed --workspace 1 --actor 7 --model intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3
 ```
 
 Use an existing CRM actor ID. A failed re-embedding leaves the previous set live;
@@ -161,12 +161,12 @@ migrations against an existing operational database just to run these tests.
 To exercise the real OCR tests and database lifecycle from the built Docker image:
 
 ```powershell
-docker build -t estateos-rag:local .
+docker build -t estraos-rag:local .
 docker run --rm --entrypoint python `
   -e RAG_TEST_DATABASE_URL='postgresql://test_user:test_password@host.docker.internal:15433/rag_verify?connect_timeout=5' `
   --mount "type=bind,source=$($PWD.Path)/tests,target=/app/tests,readonly" `
   --mount "type=bind,source=$($PWD.Path)/examples,target=/app/examples,readonly" `
-  estateos-rag:local -m pytest tests -q -p no:cacheprovider
+  estraos-rag:local -m pytest tests -q -p no:cacheprovider
 ```
 
 Real OCR tests explicitly skip on native systems without Tesseract; Docker includes

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Check, ShieldCheck } from "lucide-react";
+import { Bell, Check, ShieldCheck } from "../components/icons";
 import { useApi } from "../hooks/useApi";
 import { useList } from "../hooks/useList";
 import { useAuth } from "../hooks/useAuth";

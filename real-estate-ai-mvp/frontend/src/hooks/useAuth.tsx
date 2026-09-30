@@ -13,23 +13,40 @@ type Auth = {
   canManage: boolean;
 };
 const AuthContext = createContext<Auth | null>(null);
+const SESSION_KEY = "estraos.session";
+const WORKSPACE_KEY = "estraos.workspace";
+
+function readSharedValue(key: string) {
+  const shared = localStorage.getItem(key);
+  if (shared !== null) return shared;
+
+  const legacy = sessionStorage.getItem(key);
+  if (legacy !== null) {
+    localStorage.setItem(key, legacy);
+    sessionStorage.removeItem(key);
+  }
+  return legacy;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(() => {
     try {
-      return JSON.parse(sessionStorage.getItem("estateos.session") || "null");
+      return JSON.parse(readSharedValue(SESSION_KEY) || "null");
     } catch {
       return null;
     }
   });
   const [workspaceId, setWorkspaceId] = useState(
-    () => sessionStorage.getItem("estateos.workspace") || "",
+    () => readSharedValue(WORKSPACE_KEY) || "",
   );
   const [loading, setLoading] = useState(!!session);
   const initialSession = useRef(session);
   configureApi(session?.token || null, workspaceId);
   function clear() {
-    sessionStorage.removeItem("estateos.session");
-    sessionStorage.removeItem("estateos.workspace");
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(WORKSPACE_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(WORKSPACE_KEY);
     setSession(null);
     setWorkspaceId("");
     configureApi(null, null);
@@ -61,8 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const next = (await write("/auth/login", { email, password })) as Session;
     const id = next.workspaces[0]?.id || "";
-    sessionStorage.setItem("estateos.session", JSON.stringify(next));
-    sessionStorage.setItem("estateos.workspace", id);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    localStorage.setItem(WORKSPACE_KEY, id);
     configureApi(next.token, id);
     setWorkspaceId(id);
     setSession(next);
@@ -80,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session?.workspaces.some((w) => w.id === id)) return;
     queryClient.clear();
     setWorkspaceId(id);
-    sessionStorage.setItem("estateos.workspace", id);
+    localStorage.setItem(WORKSPACE_KEY, id);
     configureApi(session.token, id);
   }
   const role = session?.workspaces.find((w) => w.id === workspaceId)?.role;

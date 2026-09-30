@@ -27,7 +27,7 @@ This task **does not include RAG parsing, chunking, embeddings, vector storage, 
 
 Before changing any code, read:
 
-`astra_estate_os_mvp_prompt.md`
+`astra_estra_os_mvp_prompt.md`
 
 Treat that file and the existing codebase as the source of truth for:
 
@@ -92,7 +92,7 @@ Do **not** stop for approval between planning and implementation.
 Only ask for clarification if a genuinely blocking requirement cannot be determined from:
 
 1. this file,
-2. `astra_estate_os_mvp_prompt.md`,
+2. `astra_estra_os_mvp_prompt.md`,
 3. existing application code/configuration.
 
 Do not ask questions for implementation details that can reasonably follow existing app-wide conventions.

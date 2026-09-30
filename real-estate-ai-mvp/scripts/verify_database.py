@@ -23,9 +23,9 @@ def sql(query):
         command = [os.environ["PSQL_BIN"], "-h", os.environ.get("PGHOST", "127.0.0.1"),
                    "-p", os.environ.get("PGPORT", "5432")]
     else:
-        command = ["docker", "exec", "-i", os.environ.get("DB_CONTAINER", "estateos-verification-db"), "psql"]
-    command += ["-U", os.environ.get("DATABASE_USERNAME", "estateos"),
-                "-d", os.environ.get("DATABASE_NAME", "estateos"), "-v", "ON_ERROR_STOP=1", "-Atq"]
+        command = ["docker", "exec", "-i", os.environ.get("DB_CONTAINER", "estraos-verification-db"), "psql"]
+    command += ["-U", os.environ.get("DATABASE_USERNAME", "estraos"),
+                "-d", os.environ.get("DATABASE_NAME", "estraos"), "-v", "ON_ERROR_STOP=1", "-Atq"]
     result = subprocess.run(command, input=query, text=True, capture_output=True)
     if result.returncode:
         raise AssertionError(result.stderr.strip())

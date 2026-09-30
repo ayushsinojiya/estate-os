@@ -12,5 +12,5 @@ RUN useradd --uid 10001 --create-home ingestion && mkdir -p /data /models \
     && chown -R ingestion:ingestion /data /models /app
 USER ingestion
 EXPOSE 8090
-ENTRYPOINT ["estateos-rag"]
+ENTRYPOINT ["estraos-rag"]
 CMD ["api", "--host", "0.0.0.0"]

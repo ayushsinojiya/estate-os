@@ -81,8 +81,8 @@ provision() {
   fi
   # Kept outside the guard above: if the server exists but the database was never created,
   # nesting this would skip it on every subsequent run.
-  az postgres flexible-server db show -g "$RESOURCE_GROUP" -s "$PG" -n estateos -o none 2>/dev/null ||
-    az postgres flexible-server db create -g "$RESOURCE_GROUP" -s "$PG" -n estateos -o none
+  az postgres flexible-server db show -g "$RESOURCE_GROUP" -s "$PG" -n estraos -o none 2>/dev/null ||
+    az postgres flexible-server db create -g "$RESOURCE_GROUP" -s "$PG" -n estraos -o none
 
   log "Storage for the agent's durable state"
   # The agent keeps its do-not-call suppression list and outbound-call registry in SQLite.
@@ -126,13 +126,13 @@ build_crm_image() {
 
   log "Packaging and pushing CRM API image"
   local stage; stage="$(mktemp -d)"
-  cp "$CRM_DIR"/backend/target/estateos-api-*.jar "$stage/app.jar"
+  cp "$CRM_DIR"/backend/target/estraos-api-*.jar "$stage/app.jar"
   cat > "$stage/Dockerfile" <<'DOCKER'
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S estateos && adduser -S estateos -G estateos
+RUN addgroup -S estraos && adduser -S estraos -G estraos
 WORKDIR /app
-COPY --chown=estateos:estateos app.jar app.jar
-USER estateos
+COPY --chown=estraos:estraos app.jar app.jar
+USER estraos
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","app.jar"]
 DOCKER
@@ -177,7 +177,7 @@ acr_creds() {
 
 deploy_crm() {
   log "Deploying CRM API"
-  local jdbc="jdbc:postgresql://${PG}.postgres.database.azure.com:5432/estateos?sslmode=require"
+  local jdbc="jdbc:postgresql://${PG}.postgres.database.azure.com:5432/estraos?sslmode=require"
   local secrets=(
     "db-password=$POSTGRES_ADMIN_PASSWORD" "jwt-secret=$JWT_SECRET"
     "service-password=$SERVICE_ACCOUNT_PASSWORD" "voice-key=$VOICE_AGENT_API_KEY"

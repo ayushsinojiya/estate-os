@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileClock, Plus, RefreshCw, Replace, Trash2 } from "lucide-react";
+import { FileClock, Plus, RefreshCw, Replace, Trash2 } from "../components/icons";
 import { api, upload } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { useList } from "../hooks/useList";

@@ -108,7 +108,7 @@ def resolve_entities(entries, source_id, existing):
             # acquire surviving contributions from a different property.
             fallback = json.dumps([str(source_id), entry['kind'], entry['key'], parent_id,
                                    {k: normalized(v) for k, v in identity.items()}], sort_keys=True, ensure_ascii=False)
-            entity_id = next(iter(candidates)) if len(candidates) == 1 else str(uuid.uuid5(uuid.NAMESPACE_URL, 'estateos:identity-v2:' + fallback))
+            entity_id = next(iter(candidates)) if len(candidates) == 1 else str(uuid.uuid5(uuid.NAMESPACE_URL, 'estraos:identity-v2:' + fallback))
             local[entry['key']] = entity_id
             row = dict(entry, entity_id=entity_id, parent_id=parent_id, source_id=str(source_id))
             result.append(row)
