@@ -23,7 +23,10 @@ final class ProviderHttpClient {
         if (connectTimeoutMs < 1 || readTimeoutMs < 1 || connectTimeoutMs > 120000 || readTimeoutMs > 120000)
             throw new IllegalStateException("Integration timeouts must be between 1 and 120000 milliseconds");
         if (apiKey != null && (apiKey.contains("\r") || apiKey.contains("\n"))) throw new IllegalStateException(service + " API key is invalid");
-        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(connectTimeoutMs))
+        // HTTP/1.1: the default HTTP/2 sends an h2c upgrade on plain http, which uvicorn (the knowledge
+        // service and the voice agent) rejects as an invalid request.
+        HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofMillis(connectTimeoutMs))
             .followRedirects(HttpClient.Redirect.NEVER).build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(http);
         factory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
