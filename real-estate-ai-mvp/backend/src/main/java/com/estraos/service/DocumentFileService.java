@@ -141,6 +141,24 @@ public class DocumentFileService {
   /** Attaches (or replaces) the file for one existing document. */
   @Transactional
   public Map<String, Object> store(Long ws, Long documentId, MultipartFile file) {
+    write(ws, documentId, file);
+    // Indexing is automatic: the knowledge service parses, embeds and publishes the file, and the
+    // document's status follows it (see KnowledgeService).
+    knowledge.sendDocumentFile(ws, documentId, tenant.user());
+    return describe(ws, documentId);
+  }
+
+  /** Rejects a file the CRM could not store, before anything else acts on it. */
+  void validate(MultipartFile file) {
+    fileBytes(file, safeName(file.getOriginalFilename()));
+  }
+
+  /**
+   * Stores (or replaces) a document's file without sending it to the knowledge service; used when
+   * the knowledge service already has it (a swap made from File management).
+   */
+  @Transactional
+  public void write(Long ws, Long documentId, MultipartFile file) {
     tenant.manage(ws);
     repo.get("property_documents", ws, documentId); // authorises the document in this workspace
     String name = safeName(file.getOriginalFilename());
@@ -161,10 +179,14 @@ public class DocumentFileService {
             + " sha256=excluded.sha256, content=excluded.content, updated_at=now()",
         params);
     audit.record(ws, tenant.user(), "DOCUMENT_FILE_UPLOADED", "PROPERTY_DOCUMENT", documentId);
-    // Indexing is automatic: the knowledge service parses, embeds and publishes the file, and the
-    // document's status follows it (see KnowledgeService).
-    knowledge.sendDocumentFile(ws, documentId, tenant.user());
-    return describe(ws, documentId);
+  }
+
+  /** Removes a document's stored file (the source was deleted from File management). */
+  @Transactional
+  public void removeFile(Long ws, Long documentId) {
+    db.update(
+        "DELETE FROM document_files WHERE workspace_id=:ws AND document_id=:doc",
+        Map.of("ws", ws, "doc", documentId));
   }
 
   /**
