@@ -16,6 +16,7 @@ import {
   useToast,
 } from "../components/ui";
 import { write } from "../api/client";
+import { ContactLink } from "../components/ContactLink";
 import { queryClient } from "../services/query";
 import { date, label, list } from "../utils/format";
 import type { Entity } from "../types";
@@ -109,7 +110,7 @@ export function Profile() {
             </span>
             <div>
               <h2>{session?.user.name}</h2>
-              <p className="text-muted">{session?.user.email}</p>
+              <p className="text-muted">{session?.user.email && <ContactLink kind="email" value={session.user.email} />}</p>
             </div>
           </div>
           <Details
@@ -137,7 +138,7 @@ export function Profile() {
                 <span className="avatar">{m.name?.slice(0, 2)}</span>
                 <div className="flex-1">
                   <strong>{m.name}</strong>
-                  <small>{m.email}</small>
+                  <small>{m.email && <ContactLink kind="email" value={String(m.email)} />}</small>
                 </div>
                 <Badge value={m.role} />
               </div>

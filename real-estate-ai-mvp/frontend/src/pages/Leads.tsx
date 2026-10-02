@@ -26,6 +26,7 @@ import { write } from "../api/client";
 import { queryClient } from "../services/query";
 import { date, label, languages, list, money } from "../utils/format";
 import type { Entity } from "../types";
+import { ContactLink } from "../components/ContactLink";
 export function Leads() {
   const l = useList("/leads");
   const members = useApi("/members");
@@ -55,15 +56,15 @@ export function Leads() {
                 key: "name",
                 label: "Customer",
                 render: (r) => (
-                  <Link className="person-cell" to={`/leads/${r.id}`}>
-                    <span className="avatar">
+                  <div className="person-cell">
+                    <Link className="avatar" to={`/leads/${r.id}`} aria-label={`View ${r.name}`}>
                       {r.name?.slice(0, 2).toUpperCase()}
-                    </span>
+                    </Link>
                     <span>
-                      <strong>{r.name}</strong>
-                      <small>{r.phone}</small>
+                      <Link to={`/leads/${r.id}`}><strong>{r.name}</strong></Link>
+                      <small>{r.phone ? <ContactLink kind="phone" value={String(r.phone)} /> : "Not provided"}</small>
                     </span>
-                  </Link>
+                  </div>
                 ),
               },
               {
@@ -145,7 +146,11 @@ export function LeadDetail() {
       <PageHeader
         title={d.name || "Lead details"}
         back="/leads"
-        description={[d.phone, d.email].filter(Boolean).join(" · ")}
+        description={d.phone || d.email ? <span className="contact-line">
+          {d.phone && <ContactLink kind="phone" value={String(d.phone)} />}
+          {d.phone && d.email && " · "}
+          {d.email && <ContactLink kind="email" value={String(d.email)} />}
+        </span> : undefined}
         action={
           <>
             <button className="btn-secondary" onClick={() => setEdit(true)}>
@@ -371,7 +376,7 @@ export function LeadDetail() {
       {call && (
         <Modal title="Start an outbound call?" onClose={() => setCall(false)}>
           <p className="text-muted mb-5">
-            The configured voice service will contact {d.name} at {d.phone}. In
+            The configured voice service will contact {d.name} at {d.phone ? <ContactLink kind="phone" value={String(d.phone)} /> : "the saved number"}. In
             demo mode this produces a simulated conversation.
           </p>
           <RecordForm

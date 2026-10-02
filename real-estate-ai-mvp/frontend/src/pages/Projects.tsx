@@ -82,6 +82,8 @@ export function Projects() {
                       <img
                         src={p.mediaUrl}
                         alt={p.name}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         onError={(e) => {
                           e.currentTarget.style.display = "none";

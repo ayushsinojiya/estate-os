@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { ArrowRight, Building2, Check, LoaderCircle } from "../components/icons";
 import { useAuth } from "../hooks/useAuth";
 import { ErrorState } from "../components/ui";
+import { usePageMetadata } from "../hooks/usePageMetadata";
 export function Login() {
+  usePageMetadata("Sign in", "Sign in to your EstraOS workspace.");
   const { session, login } = useAuth();
   const location = useLocation();
   const [error, setError] = useState<unknown>(null);
@@ -27,12 +29,12 @@ export function Login() {
   return (
     <div className="login-shell">
       <section className="login-story">
-        <div className="brand text-white">
+        <Link to="/dashboard" className="brand text-white" aria-label="EstraOS home">
           <span className="brand-icon">
             <Building2 />
           </span>
           EstraOS
-        </div>
+        </Link>
         <div>
           <span className="eyebrow text-teal-200">REAL ESTATE. CONNECTED.</span>
           <h1>

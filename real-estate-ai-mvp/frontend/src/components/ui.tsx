@@ -17,6 +17,8 @@ import { label } from "../utils/format";
 import { AsyncSelect } from "./AsyncSelect";
 import { DateTimePicker } from "./DateTimePicker";
 import { CustomSelect } from "./CustomSelect";
+import { ContactLink } from "./ContactLink";
+import { usePageMetadata } from "../hooks/usePageMetadata";
 export function Badge({ value }: { value: unknown }) {
   const s = String(value || "UNKNOWN");
   return (
@@ -34,10 +36,11 @@ export function PageHeader({
   back,
 }: {
   title: string;
-  description?: string;
+  description?: ReactNode;
   action?: ReactNode;
   back?: string;
 }) {
+  usePageMetadata(title, typeof description === "string" ? description : undefined);
   return (
     <div className="page-heading">
       <div>
@@ -501,6 +504,8 @@ export function Details({
           <dd>
             {data[f] == null || data[f] === ""
               ? "Not provided"
+              : (f === "phone" || f === "email") && typeof data[f] === "string"
+                ? <ContactLink kind={f} value={data[f]} />
               : typeof data[f] === "object"
                 ? JSON.stringify(data[f])
                 : String(data[f])}

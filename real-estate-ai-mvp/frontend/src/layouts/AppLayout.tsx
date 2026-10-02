@@ -187,7 +187,7 @@ export function AppLayout() {
           <Outlet />
         </main>
         <footer>
-          EstraOS <span>Built around better customer journeys.</span>
+          <span>© {new Date().getFullYear()} EstraOS</span> <span>Built around better customer journeys.</span>
         </footer>
       </div>
     </div>

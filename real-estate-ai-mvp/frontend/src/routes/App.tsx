@@ -12,6 +12,7 @@ import { SiteVisits, SiteVisitDetail } from "../pages/SiteVisits";
 import { Handovers } from "../pages/Handovers";
 import { Notifications, Profile, AuditLogs } from "../pages/Settings";
 import { Files } from "../pages/Files";
+import { NotFound } from "../pages/NotFound";
 export function ProtectedRoute() {
   const { session, loading } = useAuth();
   const location = useLocation();
@@ -64,17 +65,9 @@ export function App() {
           <Route element={<ManagementRoute />}>
             <Route path="audit-logs" element={<AuditLogs />} />
           </Route>
-          <Route
-            path="*"
-            element={
-              <Empty
-                title="This page has moved"
-                description="Use the workspace navigation to find your next step."
-              />
-            }
-          />
         </Route>
       </Route>
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

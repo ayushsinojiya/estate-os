@@ -730,6 +730,27 @@ footer {
 .skip-link:focus {
   top: 10px;
 }
+.not-found-page {
+  min-height: 100dvh;
+  padding: 28px;
+  background: #f7f9f8;
+}
+.not-found-page > main {
+  max-width: 440px;
+  margin: min(20vh, 140px) auto 0;
+  padding: 32px;
+  border: 1px solid #e3e9e5;
+  border-radius: 11px;
+  background: #fff;
+}
+.not-found-page h1 {
+  margin-top: 10px;
+}
+.not-found-page p {
+  margin: 12px 0 24px;
+  color: #64756a;
+  line-height: 1.6;
+}
 .mobile-menu,
 .mobile-close {
   display: none;
@@ -1337,6 +1358,13 @@ footer {
   }
 }
 @media (max-width: 760px) {
+  .not-found-page {
+    padding: 20px;
+  }
+  .not-found-page > main {
+    margin-top: 12vh;
+    padding: 24px;
+  }
   .date-time-picker-menu {
     grid-template-columns: 1fr;
   }
@@ -1502,6 +1530,11 @@ footer {
   .summary-strip {
     padding: 17px;
     gap: 14px;
+  }
+}
+@media (max-width: 380px) {
+  .topbar > div:first-child strong {
+    display: none;
   }
 }
 @media (max-height: 850px) {
