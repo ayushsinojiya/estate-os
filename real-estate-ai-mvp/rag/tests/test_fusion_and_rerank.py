@@ -114,3 +114,25 @@ def test_no_budget_waits_for_the_embedding():
     retriever, scope = _retriever(searcher)
     result = asyncio.run(retriever.run(scope, "q", 4, rewrite_query=False))
     assert result.vector == "ok" and searcher.seen_vectors == [[0.0]]
+
+
+def test_rate_limited_calls_wait_as_long_as_the_provider_asks(monkeypatch):
+    import httpx
+    from rag_service.providers import http as provider_http
+    calls, waits = [], []
+
+    def handler(request):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, headers={"retry-after-ms": "7300"}, json={"error": "rate limit"})
+        return httpx.Response(200, json={"ok": True})
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+    monkeypatch.setattr(provider_http.asyncio, "sleep", fake_sleep)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await provider_http.post_json(client, "https://x.test", headers={}, payload={})
+    assert asyncio.run(go()) == {"ok": True}
+    assert waits == [7.3]

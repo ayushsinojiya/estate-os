@@ -36,7 +36,10 @@ class Settings(BaseSettings):
 
     # ---- parsing
     parser_provider: Literal["openai", "mistral"] = "openai"
-    parser_model: str = "gpt-4o-mini"
+    # gpt-4.1-mini: same transcription quality as gpt-4o-mini on brochure pages, ~3.5k instead of
+    # ~37k input tokens per page (gpt-4o-mini bills images at a multiple), so ~1/3 of the cost and a
+    # tenth of the tokens-per-minute rate limit.
+    parser_model: str = "gpt-4.1-mini"
     mistral_ocr_model: str = "mistral-ocr-latest"
     parse_concurrency: int = 4
     parse_max_retries: int = 3

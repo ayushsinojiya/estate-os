@@ -210,3 +210,19 @@ async def test_pdf_text_layer_ingests_offline_and_low_confidence_pages_are_flagg
     assert detail["lowConfidencePages"] == [2] and detail["warnings"]
     hit = (await voice(client, 1, "P52100012345")).json()["results"][0]
     assert "P52100012345" in hit["content"] and hit["page"] == 1
+
+
+async def test_publishing_an_already_indexed_file_does_not_parse_it_again(client, services):
+    """CRM upload sends the file; the publish click that follows must not pay for a second parse."""
+    created = await _publish(client, services, 1, "grove-brochure.md", BROCHURE_A, projectId=11, crmDocumentId=601)
+    base = {"workspaceId": "1", "projectId": "11", "documentId": "601", "status": "PUBLISHED", "publishedOnly": True}
+    for _ in range(2):
+        status = (await client.post("/v1/content/index", headers=CRM, json=base)).json()
+        assert status["status"] == "PUBLISHED"
+    detail = (await client.get(f"/v1/workspaces/1/sources/{created['id']}", headers=CRM)).json()
+    assert [v["version"] for v in detail["versions"]] == [1]
+    # An unpublished file comes back without a re-parse; an explicit reindex still re-parses.
+    await client.post("/v1/content/unpublish", headers=CRM, json=base)
+    assert (await client.post("/v1/content/index", headers=CRM, json=base)).json()["status"] == "PUBLISHED"
+    assert (await voice(client, 1, "rooftop infinity pool")).json()["results"]
+    assert (await client.post("/v1/documents/reindex", headers=CRM, json=base)).json()["status"] == "UPLOADED"

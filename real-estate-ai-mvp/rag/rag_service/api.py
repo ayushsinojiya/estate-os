@@ -459,7 +459,19 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         if not content:
             if existing is None:
                 raise HTTPException(422, "nothing to index: no content and no uploaded file")
-            await _reindex(svc, existing["current"])
+            current = existing["current"]
+            # Publishing a document whose file is already live (or still being processed) must not
+            # parse it again: page parsing is the paid step. Only an unpublished file is brought
+            # back, and only a failed one is re-parsed; /v1/documents/reindex always re-parses.
+            if current["status"] in ("PUBLISHED", "UPLOADED", "PARSING", "EMBEDDING"):
+                pass
+            elif current["status"] == "UNPUBLISHED":
+                try:
+                    await svc.store.republish(ws, current["source_id"])
+                except Conflict:
+                    await _reindex(svc, current)
+            else:
+                await _reindex(svc, current)
         else:
             data = content.encode("utf-8")
             digest = sha256(data)
