@@ -12,8 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The CRM's side of the knowledge service: forwards uploaded files and applies the processing
- * status it reports back onto the CRM's own records.
+ * The CRM's side of the knowledge service: forwards property-document files and applies the
+ * processing status it reports back onto the document. (Workspace-wide sources are uploaded on the
+ * Files page through the /api/v1/knowledge proxy; general file storage is never sent.)
  *
  * <p>Status flows by polling, not callbacks: the knowledge service holds no credential for this
  * API. {@link #syncPending()} runs on a schedule and the document processing-status endpoint
@@ -153,57 +154,43 @@ public class KnowledgeService {
     repo.save("property_documents", ws, documentId, doc, Map.of("status", column));
   }
 
-  // ---------------------------------------------------------------- Files page
-
-  /** Files-page uploads are workspace-wide knowledge (no project). Best effort, never throws. */
-  public void sendManagedFile(
-      Long ws, Long fileId, String name, String contentType, byte[] content, Long actor) {
-    String status, error = null, source = null;
-    try {
-      Map<String, Object> request = new LinkedHashMap<>();
-      request.put("workspaceId", ws.toString());
-      request.put("crmFileId", fileId.toString());
-      request.put("title", name);
-      var result = rag.uploadSource(request, name, contentType, content);
-      status = String.valueOf(result.get("status"));
-      source = text(result.get("id"));
-      if (status.equals("REJECTED")) error = text(result.getOrDefault("reason", "Rejected"));
-      if (status.equals("DUPLICATE")) {
-        error = "Already indexed as another knowledge source";
-        status = text(result.getOrDefault("existingStatus", "PUBLISHED"));
-      }
-    } catch (ExternalServiceException e) {
-      status = "FAILED";
-      error = e.getMessage();
-      audit.record(ws, actor, "EXTERNAL_SERVICE_FAILED", "MANAGED_FILE", fileId);
-    }
-    Map<String, Object> params = new HashMap<>();
-    params.put("ws", ws);
-    params.put("id", fileId);
-    params.put("source", source == null ? null : UUID.fromString(source));
-    params.put("status", status.length() > 20 ? status.substring(0, 20) : status);
-    params.put("error", error == null ? null : error.length() > 500 ? error.substring(0, 500) : error);
-    db.update(
-        "UPDATE managed_files SET knowledge_source_id=:source, knowledge_status=:status,"
-            + " knowledge_error=:error, updated_at=now() WHERE workspace_id=:ws AND id=:id",
-        params);
-  }
-
-  public void deleteManagedFile(Long ws, UUID source, Long actor, Long fileId) {
-    try {
-      rag.deleteSource(Map.of("workspaceId", ws.toString(), "sourceId", source.toString()));
-    } catch (ExternalServiceException e) {
-      log.warn("Knowledge source {} could not be deleted: {}", source, e.getMessage());
-      audit.record(ws, actor, "EXTERNAL_SERVICE_FAILED", "MANAGED_FILE", fileId);
-    }
-  }
-
   // ---------------------------------------------------------------- scheduled sync
+
+  /**
+   * Sends a document whose text was written before the knowledge service could be reached (the
+   * demo seed, or a publish while it was down). Retried on every sync until it is accepted.
+   */
+  @Transactional(noRollbackFor = ExternalServiceException.class)
+  public void indexPending(Long ws, Long documentId) {
+    var doc = new LinkedHashMap<>(repo.get("property_documents", ws, documentId));
+    var request = documentContext(ws, doc);
+    request.put("content", doc.get("content"));
+    request.put("projectLocation", request.get("locality"));
+    request.put("status", "PUBLISHED");
+    request.put("publishedOnly", true);
+    var result = rag.indexPublishedContent(request);
+    doc.put("processingStatus", result.getOrDefault("status", "QUEUED"));
+    doc.put("mock", result.getOrDefault("mock", false));
+    repo.save("property_documents", ws, documentId, doc, Map.of());
+  }
 
   /** One pass over everything still being processed. Row locks keep replicas from overlapping. */
   @Transactional
   public int syncPending() {
     int synced = 0;
+    var queued =
+        db.getJdbcTemplate()
+            .queryForList(
+                "SELECT workspace_id, id FROM property_documents WHERE data->>'processingStatus'="
+                    + "'PENDING_INDEX' AND status='PUBLISHED' ORDER BY id LIMIT 20 FOR UPDATE SKIP LOCKED");
+    for (var row : queued) {
+      try {
+        indexPending(((Number) row.get("workspace_id")).longValue(), ((Number) row.get("id")).longValue());
+        synced++;
+      } catch (ExternalServiceException e) {
+        log.info("Knowledge service not reachable yet for document {}: {}", row.get("id"), e.getMessage());
+      }
+    }
     var documents =
         db.getJdbcTemplate()
             .queryForList(
@@ -218,33 +205,6 @@ public class KnowledgeService {
         synced++;
       } catch (ExternalServiceException e) {
         log.warn("Knowledge status for document {} unavailable: {}", id, e.getMessage());
-      }
-    }
-    var files =
-        db.getJdbcTemplate()
-            .queryForList(
-                "SELECT workspace_id, id, knowledge_source_id FROM managed_files WHERE"
-                    + " knowledge_status IN ('QUEUED','UPLOADED','PARSING','EMBEDDING') AND"
-                    + " knowledge_source_id IS NOT NULL ORDER BY updated_at LIMIT 50 FOR UPDATE SKIP"
-                    + " LOCKED");
-    for (var row : files) {
-      Long ws = ((Number) row.get("workspace_id")).longValue();
-      try {
-        var source =
-            rag.getSource(
-                Map.of("workspaceId", ws.toString(), "sourceId", row.get("knowledge_source_id").toString()));
-        Map<String, Object> params = new HashMap<>();
-        params.put("status", String.valueOf(source.get("status")));
-        params.put("error", text(source.get("error")));
-        params.put("ws", ws);
-        params.put("id", ((Number) row.get("id")).longValue());
-        db.update(
-            "UPDATE managed_files SET knowledge_status=:status, knowledge_error=:error,"
-                + " updated_at=now() WHERE workspace_id=:ws AND id=:id",
-            params);
-        synced++;
-      } catch (ExternalServiceException e) {
-        log.warn("Knowledge status for file {} unavailable: {}", row.get("id"), e.getMessage());
       }
     }
     return synced;

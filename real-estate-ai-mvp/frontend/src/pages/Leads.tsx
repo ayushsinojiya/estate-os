@@ -26,6 +26,7 @@ import { write } from "../api/client";
 import { queryClient } from "../services/query";
 import { date, label, languages, list, money } from "../utils/format";
 import type { Entity } from "../types";
+import { DncBanner, LeadCallbacks, MarkDnc } from "../features/voice";
 import { ContactLink } from "../components/ContactLink";
 export function Leads() {
   const l = useList("/leads");
@@ -156,7 +157,8 @@ export function LeadDetail() {
             <button className="btn-secondary" onClick={() => setEdit(true)}>
               Edit lead
             </button>
-            <button className="btn-primary" onClick={() => setCall(true)}>
+            {q.data && <MarkDnc lead={d} />}
+            <button className="btn-primary" disabled={!!(d.dnc || d.doNotCall)} onClick={() => setCall(true)}>
               <Phone size={16} />
               Start call
             </button>
@@ -164,8 +166,12 @@ export function LeadDetail() {
         }
       />
       <Async query={q}>
+        <DncBanner lead={d} />
         <div className="summary-strip">
           <Badge value={d.status} />
+          {d.leadTemperature && <Badge value={d.leadTemperature} />}
+          {d.leadScore != null && <span>Score {d.leadScore}/100</span>}
+          {d.whatsappConsent && <span title={d.whatsappConsentAt ? `Given ${date(d.whatsappConsentAt)}` : undefined}>WhatsApp: consented</span>}
           <span>
             {languages.find((l) => l.value === d.language)?.label || d.language}
           </span>
@@ -245,6 +251,7 @@ export function LeadDetail() {
                 </article>
               ))}
             </section>
+            <LeadCallbacks lead={d} />
             <section className="panel">
               <div className="panel-heading">
                 <h2>Suggested properties</h2>

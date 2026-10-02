@@ -1,6 +1,8 @@
 package com.estraos.service;
 
 import com.estraos.audit.AuditService;
+import com.estraos.calls.CallScheduleService;
+import com.estraos.calls.OutboundCallService;
 import com.estraos.dto.*;
 import com.estraos.exception.ApiException;
 import com.estraos.integration.*;
@@ -24,6 +26,11 @@ public class EstateService {
   private final VoiceAgentServiceClient voice;
   private final NotificationServiceClient notification;
   private final KnowledgeService knowledge;
+  private final Notifier notifier;
+  private final OutboundCallService outbound;
+  private final CallScheduleService schedule;
+  private final CallOutcomeService outcomes;
+  private final DncService dnc;
   private final String countryCode;
   private static final Set<String> MANAGED =
       Set.of(
@@ -44,6 +51,11 @@ public class EstateService {
       VoiceAgentServiceClient voice,
       NotificationServiceClient notification,
       KnowledgeService knowledge,
+      Notifier notifier,
+      OutboundCallService outbound,
+      CallScheduleService schedule,
+      CallOutcomeService outcomes,
+      DncService dnc,
       @org.springframework.beans.factory.annotation.Value("${app.default-country-code:91}")
           String countryCode) {
     this.repo = repo;
@@ -54,6 +66,11 @@ public class EstateService {
     this.voice = voice;
     this.notification = notification;
     this.knowledge = knowledge;
+    this.notifier = notifier;
+    this.outbound = outbound;
+    this.schedule = schedule;
+    this.outcomes = outcomes;
+    this.dnc = dnc;
     if (!countryCode.matches("[0-9]{1,4}"))
       throw new IllegalStateException("DEFAULT_COUNTRY_CODE must be 1 to 4 digits");
     this.countryCode = countryCode;
@@ -125,6 +142,16 @@ public class EstateService {
       result.put("siteVisits", repo.related("appointments", ws, "lead_id", resource));
       result.put("handovers", repo.related("handover_records", ws, "lead_id", resource));
       result.put("recommendations", suggestions(ws, resource));
+      result.put("callbacks", repo.related("callbacks", ws, "lead_id", resource));
+      result.put(
+          "scheduledCalls",
+          repo.sql()
+              .query(
+                  "SELECT * FROM scheduled_calls WHERE workspace_id=:ws AND lead_id=:id ORDER BY"
+                      + " due_at DESC LIMIT 20",
+                  Map.of("ws", ws, "id", resource),
+                  repo::row));
+      result.put("dnc", dnc.listed(ws, String.valueOf(result.get("phone"))));
     }
     if (table.equals("handover_records")) {
       Long lead = id(result.get("leadId"));
@@ -360,7 +387,16 @@ public class EstateService {
         "Follow up with " + request.name());
     activity(ws, uuid, resource == null ? "LEAD_CREATED" : "LEAD_UPDATED", "Lead profile saved");
     event(ws, resource == null ? "LEAD_CREATED" : "LEAD_UPDATED", "LEAD", uuid);
+    if (resource == null && fromWebOrPortal(request.source())) schedule.newLead(ws, uuid);
     return saved;
+  }
+
+  /** Leads that arrive from the website or a property portal get a first call within minutes. */
+  static boolean fromWebOrPortal(String source) {
+    if (source == null) return false;
+    String s = source.trim().toUpperCase(Locale.ROOT);
+    return s.contains("WEB") || s.contains("PORTAL") || s.equals("ONLINE") || s.contains("99ACRES")
+        || s.contains("MAGICBRICKS") || s.contains("HOUSING");
   }
 
   @Transactional
@@ -764,22 +800,12 @@ public class EstateService {
         return repo.get("voice_sessions", ws, id(prior.getFirst().get("callId")));
       }
     }
-    String callId = java.util.UUID.randomUUID().toString();
-    Map<String, Object> payload =
-        fields(
-            "workspaceId",
-            ws.toString(),
-            "leadId",
-            request.leadId().toString(),
-            "phone",
-            lead.get("phone"),
-            "language",
-            lead.get("language"),
-            "requestId",
-            key == null ? callId.toString() : key);
-    Map<String, Object> result;
+    String requestId = key == null ? java.util.UUID.randomUUID().toString() : key;
+    // A first call to a new lead opens with their enquiry; anything later picks up the thread.
+    String callType = "NEW".equals(lead.get("status")) ? "OUTBOUND_NEW_LEAD" : "CALLBACK";
+    Map<String, Object> saved;
     try {
-      result = new LinkedHashMap<>(voice.startOutboundCall(payload));
+      saved = outbound.start(ws, lead, callType, null, null, requestId, tenant.user());
     } catch (ExternalServiceException e) {
       event(ws, "EXTERNAL_SERVICE_FAILED", "LEAD", request.leadId());
       notify(
@@ -790,16 +816,7 @@ public class EstateService {
           request.leadId());
       throw e;
     }
-    result.put("leadName", lead.get("name"));
-    var saved =
-        repo.save(
-            "voice_sessions",
-            ws,
-            null,
-            result,
-            fields("lead_id", request.leadId(), "status", result.getOrDefault("status", "QUEUED")));
     Long uuid = id(saved.get("id"));
-    saveCallDetails(ws, uuid, result);
     if (key != null)
       repo.save(
           "idempotency_keys",
@@ -807,8 +824,6 @@ public class EstateService {
           null,
           fields("key", key, "leadId", request.leadId().toString(), "callId", uuid),
           Map.of());
-    activity(ws, request.leadId(), "CALL_STARTED", "Outbound call requested");
-    event(ws, "CALL_STARTED", "VOICE_SESSION", uuid);
     return saved;
   }
 
@@ -969,6 +984,15 @@ public class EstateService {
           ws, request.leadId(), "CALL_COMPLETED",
           state.equals("FAILED") ? "Voice call ended without completing" : "Voice call recorded");
       event(ws, "CALL_RECORDED", "VOICE_SESSION", uuid);
+      if (Boolean.TRUE.equals(request.doNotCall()))
+        dnc.add(ws, String.valueOf(lead.get("phone")), request.doNotCallBasis(), "VOICE_AGENT",
+            request.leadId(), tenant.user());
+      var applied = outcomes.apply(ws, request, uuid, tenant.user());
+      if (!applied.isEmpty()) {
+        saved = new LinkedHashMap<>(saved);
+        saved.put("outcomes", applied);
+        repo.save("voice_sessions", ws, uuid, saved, Map.of());
+      }
     }
     return saved;
   }
@@ -989,15 +1013,39 @@ public class EstateService {
             .entrySet())
       if (entry.getValue() != null) patch.put(entry.getKey(), entry.getValue());
     if (request.bhk() != null && !request.bhk().isEmpty()) patch.put("bhk", request.bhk());
+    for (var entry :
+        fields(
+                "purpose", request.purpose(),
+                "possessionPreference", request.possessionPreference(),
+                "leadTemperature", request.leadTemperature(),
+                "lastCallType", request.callType())
+            .entrySet())
+      if (entry.getValue() != null) patch.put(entry.getKey(), entry.getValue());
+    if (request.projectId() != null && lead.get("projectId") == null)
+      patch.put("projectId", request.projectId().toString());
+    if (request.whatsappConsent() != null) {
+      // Recorded with when it was given: WhatsApp messages are sent only on an explicit yes.
+      patch.put("whatsappConsent", request.whatsappConsent());
+      patch.put("whatsappConsentAt", Instant.now().toString());
+      patch.put("whatsappConsentCallId", request.callId());
+    }
     if (Boolean.TRUE.equals(request.doNotCall())) {
       patch.put("doNotCall", true);
       patch.put("doNotCallBasis", request.doNotCallBasis());
     }
     String current = String.valueOf(lead.get("status"));
+    // A warm or hot lead is qualified; any other completed call means the lead was contacted.
+    // Status only moves forward, so a later call never reopens a qualified or handed-over lead.
+    String proposed =
+        "WARM".equals(request.leadTemperature()) || "HOT".equals(request.leadTemperature())
+            ? "QUALIFIED"
+            : "CONTACTED";
     String next =
         Boolean.TRUE.equals(request.doNotCall())
             ? "NOT_INTERESTED"
-            : Set.of("NEW", "CONTACTED").contains(current) ? "CONTACTED" : current;
+            : Set.of("NOT_INTERESTED", "LOST").contains(current)
+                ? current
+                : LeadStatus.advance(current, proposed);
     repo.sql()
         .update(
             "UPDATE leads SET status=:status,data=data||CAST(:patch AS jsonb),updated_at=now()"
@@ -1044,8 +1092,24 @@ public class EstateService {
     }
   }
 
+  /**
+   * How a visit is being saved. People in the CRM use {@link #STANDARD}. The voice agent's bookings
+   * may keep an agent who turned out to be busy (flagged for review), move the lead's status only
+   * forward, and carry booking metadata.
+   */
+  public record VisitOptions(
+      boolean allowAgentOverlap, boolean forwardOnly, Map<String, Object> extra, String reviewReason) {
+    public static final VisitOptions STANDARD = new VisitOptions(false, false, Map.of(), null);
+  }
+
   @Transactional
   public Map<String, Object> visit(Long ws, Long uuid, Requests.Visit request) {
+    return saveVisit(ws, uuid, request, VisitOptions.STANDARD);
+  }
+
+  @Transactional
+  public Map<String, Object> saveVisit(
+      Long ws, Long uuid, Requests.Visit request, VisitOptions options) {
     tenant.require(ws);
     repo.workspaceLock(ws);
     var lead = repo.get("leads", ws, request.leadId());
@@ -1112,7 +1176,10 @@ public class EstateService {
                   .queryForObject(
                       "SELECT count(*) FROM appointments WHERE workspace_id=:ws AND id<>:id AND"
                           + " status IN ('REQUESTED','CONFIRMED','RESCHEDULED') AND"
-                          + " (agent_id=:agent OR lead_id=:lead) AND scheduled_at<:end AND"
+                          + (options.allowAgentOverlap()
+                              ? " lead_id=:lead"
+                              : " (agent_id=:agent OR lead_id=:lead)")
+                          + " AND scheduled_at<:end AND"
                           + " scheduled_at+duration_minutes*interval '1 minute'>:start",
                       params,
                       Long.class));
@@ -1131,6 +1198,10 @@ public class EstateService {
     data.put("notificationStatus", "PENDING");
     data.put("leadName", lead.get("name"));
     data.put("projectName", project.get("name"));
+    if (old != null)
+      for (String key : List.of("bookedBy", "assignedBy", "callId", "needsManagerReview"))
+        if (old.get(key) != null && !data.containsKey(key)) data.put(key, old.get(key));
+    data.putAll(options.extra());
     var saved =
         repo.save(
             "appointments",
@@ -1191,14 +1262,25 @@ public class EstateService {
         "Site visit " + state.toLowerCase(Locale.ROOT));
     if (active || state.equals("COMPLETED")) {
       String leadState = state.equals("COMPLETED") ? "VISIT_COMPLETED" : "VISIT_PLANNED";
-      repo.save("leads", ws, request.leadId(), lead, fields("status", leadState));
-      repo.event(
-          "lead_status_history",
-          ws,
-          "lead_id",
-          request.leadId(),
-          fields("status", leadState, "previousStatus", lead.get("status")));
+      if (options.forwardOnly())
+        leadState = LeadStatus.advance(String.valueOf(lead.get("status")), leadState);
+      if (!leadState.equals(lead.get("status"))) {
+        repo.save("leads", ws, request.leadId(), lead, fields("status", leadState));
+        repo.event(
+            "lead_status_history",
+            ws,
+            "lead_id",
+            request.leadId(),
+            fields("status", leadState, "previousStatus", lead.get("status")));
+      }
     }
+    if (options.reviewReason() != null)
+      notifier.managers(
+          ws,
+          "VISIT_NEEDS_REVIEW",
+          "Site visit for " + lead.get("name") + " needs review: " + options.reviewReason(),
+          resource);
+    schedule.visitReminders(ws, resource);
     scheduleReminder(
         ws,
         request.agentId(),
@@ -1278,53 +1360,7 @@ public class EstateService {
   }
 
   private String notify(Long ws, Long user, String type, String message, Long resource) {
-    Map<String, Object> data =
-        fields(
-            "type",
-            type,
-            "title",
-            type.replace('_', ' '),
-            "message",
-            message,
-            "resourceId",
-            resource,
-            "read",
-            false);
-    var saved =
-        repo.save("notifications", ws, null, data, fields("user_id", user, "status", "PENDING"));
-    Long uuid = id(saved.get("id"));
-    Map<String, Object> payload =
-        fields(
-            "workspaceId",
-            ws.toString(),
-            "notificationId",
-            uuid.toString(),
-            "recipientUserId",
-            user == null ? null : user.toString(),
-            "type",
-            type,
-            "message",
-            message);
-    String state;
-    Map<String, Object> delivery;
-    try {
-      delivery = notification.send(payload);
-      state = delivery.getOrDefault("status", "PENDING").toString();
-    } catch (ExternalServiceException e) {
-      state = "FAILED";
-      delivery = fields("status", state, "error", e.getMessage());
-      event(ws, "EXTERNAL_SERVICE_FAILED", "NOTIFICATION", uuid);
-    }
-    data.put("mock", delivery.getOrDefault("mock", false));
-    repo.save("notifications", ws, uuid, data, fields("status", state));
-    repo.event("notification_deliveries", ws, "notification_id", uuid, delivery);
-    repo.save(
-        "outbox_events",
-        ws,
-        null,
-        fields("type", type, "notificationId", uuid, "status", state),
-        Map.of());
-    return state;
+    return notifier.notify(ws, user, type, message, resource);
   }
 
   @Transactional

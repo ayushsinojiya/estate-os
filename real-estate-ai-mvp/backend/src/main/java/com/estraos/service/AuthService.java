@@ -131,19 +131,19 @@ public class AuthService {
   public List<Map<String, Object>> members(Long ws) {
     tenant.require(ws);
     return db.query(
-        "SELECT u.id,u.name,u.email,r.name AS role FROM users u JOIN workspace_members m ON"
-            + " u.id=m.user_id JOIN roles r ON r.id=m.role_id WHERE m.workspace_id=? AND u.enabled"
-            + " ORDER BY u.name",
-        (rs, n) ->
-            Map.of(
-                "id",
-                rs.getString("id"),
-                "name",
-                rs.getString("name"),
-                "email",
-                rs.getString("email"),
-                "role",
-                rs.getString("role")),
+        "SELECT u.id,u.name,u.email,u.phone,r.name AS role,m.agent_available FROM users u JOIN"
+            + " workspace_members m ON u.id=m.user_id JOIN roles r ON r.id=m.role_id WHERE"
+            + " m.workspace_id=? AND u.enabled ORDER BY u.name",
+        (rs, n) -> {
+          Map<String, Object> row = new LinkedHashMap<>();
+          row.put("id", rs.getString("id"));
+          row.put("name", rs.getString("name"));
+          row.put("email", rs.getString("email"));
+          row.put("phone", rs.getString("phone"));
+          row.put("role", rs.getString("role"));
+          row.put("agentAvailable", rs.getBoolean("agent_available"));
+          return row;
+        },
         ws);
   }
 }

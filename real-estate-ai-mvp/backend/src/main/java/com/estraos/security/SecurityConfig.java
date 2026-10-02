@@ -65,6 +65,8 @@ public class SecurityConfig {
                 .permitAll()
                 .requestMatchers(
                     "/api/v1/auth/login",
+                    // Signed by Meta (X-Hub-Signature-256), verified in the controller.
+                    "/api/v1/webhooks/whatsapp",
                     "/actuator/health",
                     "/actuator/health/**",
                     "/swagger-ui.html",
@@ -114,7 +116,7 @@ public class SecurityConfig {
   CorsConfigurationSource corsConfigurationSource(@Value("${app.cors-origins}") String origins) {
     CorsConfiguration c = new CorsConfiguration();
     c.setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).toList());
-    c.setAllowedMethods(List.of("GET", "POST", "PUT", "OPTIONS"));
+    c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     c.setAllowedHeaders(
         List.of("Authorization", "Content-Type", "X-Workspace-Id", "Idempotency-Key"));
     c.setMaxAge(3600L);

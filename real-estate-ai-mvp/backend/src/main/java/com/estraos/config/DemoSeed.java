@@ -18,6 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 /** Explicit opt-in, idempotent, fictional development data. Never resets existing data. */
 @Component
 @Profile("demo")
+// Before ServiceAccountProvisioner, so on a fresh database the demo workspace is workspace 1 and
+// the voice agent's service account joins it rather than an empty workspace of its own.
+@org.springframework.core.annotation.Order(1)
 public class DemoSeed implements ApplicationRunner {
   private final JdbcTemplate db;
   private final TenantRepository repo;
@@ -93,6 +96,10 @@ public class DemoSeed implements ApplicationRunner {
     member(ws, manager, roles.get("MANAGER"));
     member(ws, agent, roles.get("REAL_ESTATE_AGENT"));
     member(other, otherAgent, roles.get("REAL_ESTATE_AGENT"));
+    Long secondAgent = user("Kabir Joshi", "agent3@estraos.demo", hash);
+    member(ws, secondAgent, roles.get("REAL_ESTATE_AGENT"));
+    db.update("UPDATE users SET phone='+919800000101' WHERE id=?", agent);
+    db.update("UPDATE users SET phone='+919800000102' WHERE id=?", secondAgent);
     String[] names = {"The Palms Residences", "Riverfront Heights", "Oakwood Gardens"};
     String[] locations = {"Satellite, Ahmedabad", "Paldi, Ahmedabad", "Whitefield, Bengaluru"};
     List<Long> projects = new ArrayList<>(), units = new ArrayList<>();
@@ -185,6 +192,8 @@ public class DemoSeed implements ApplicationRunner {
             fields("price", unit.get("price"), "currency", "INR"));
       }
     }
+    seedVisiting(ws, projects, List.of(agent, secondAgent));
+    seedKnowledge(ws, projects.subList(0, 2), names, locations);
     String[] people = {
       "Kavya Joshi",
       "Vikram Rao",
@@ -511,6 +520,63 @@ public class DemoSeed implements ApplicationRunner {
             "NEW",
             "assigned_agent_id",
             otherAgent));
+  }
+
+  /** Workspace visiting hours, one project with its own, and both agents on every project. */
+  private void seedVisiting(Long ws, List<Long> projects, List<Long> agents) {
+    for (int day = 1; day <= 7; day++)
+      db.update("INSERT INTO visit_slot_templates(workspace_id,project_id,day_of_week,start_time,end_time,"
+          + "slot_minutes,capacity) VALUES (?,NULL,?,'10:00','19:00',60,3)", ws, day);
+    for (int day = 1; day <= 7; day++)
+      db.update("INSERT INTO visit_slot_templates(workspace_id,project_id,day_of_week,start_time,end_time,"
+          + "slot_minutes,capacity) VALUES (?,?,?,?,?,60,4)", ws, projects.getFirst(), day,
+          java.sql.Time.valueOf(day >= 6 ? "10:00:00" : "11:00:00"), java.sql.Time.valueOf(day >= 6 ? "19:00:00" : "18:00:00"));
+    for (Long project : projects)
+      for (Long agent : agents)
+        db.update("INSERT INTO project_agents(workspace_id,project_id,user_id,available) VALUES (?,?,?,true)",
+            ws, project, agent);
+  }
+
+  /**
+   * A synthetic brochure, FAQ and price sheet for two projects, so retrieval has something to find
+   * on a fresh demo. They are queued as PENDING_INDEX and sent to the knowledge service by the
+   * knowledge sync once it is reachable. Fictional content only.
+   */
+  private void seedKnowledge(Long ws, List<Long> projects, String[] names, String[] locations) {
+    for (int i = 0; i < projects.size(); i++) {
+      String name = names[i], place = locations[i];
+      String[][] docs = {
+        {"BROCHURE", name + " brochure",
+         "# " + name + "\n\n> Synthetic demonstration content for a fictional project.\n\n"
+             + "## Amenities\n\n### Clubhouse\nA 10,000 sq ft clubhouse with a rooftop swimming pool, a gym and a"
+             + " yoga deck.\n\n### Outdoor\nA jogging track around the central lawn, a children's play area and a"
+             + " senior citizens' garden.\n\n## Specifications\nVitrified tiles in living areas, three-track aluminium"
+             + " windows with mosquito mesh, granite kitchen platform with a stainless steel sink.\n\n"
+             + "## Location\n" + name + " is in " + place + ", close to schools, hospitals and the main road."},
+        {"FAQ", name + " FAQ",
+         "# " + name + " — frequently asked questions\n\n## When is possession?\nPossession is planned for June"
+             + " 2027.\n\n## Are pets allowed?\nYes, pets are welcome and there is a pet park.\n\n"
+             + "## How many car parks come with a flat?\nOne covered car park with a 2 BHK and two with a 3 BHK.\n\n"
+             + "## What are the site visit timings?\nThe sample flat is open every day from 10 AM to 7 PM."},
+        {"PRICE_SHEET", name + " price sheet (charges)",
+         "# " + name + " — charges and payment plan\n\nUnit prices are quoted live from inventory; this sheet"
+             + " covers charges only.\n\n## Charges\n\n| Charge | Amount |\n|---|---|\n| Floor rise | ₹40 per sq ft"
+             + " per floor above the 5th |\n| Garden-facing PLC | ₹150 per sq ft |\n| Club membership | ₹2,00,000 |\n"
+             + "| Maintenance deposit | 24 months at ₹4 per sq ft |\n| GST | 5% of agreement value |\n\n"
+             + "## Payment plan\n\n| Stage | Percent |\n|---|---|\n| On booking | 10% |\n| Agreement | 10% |\n"
+             + "| Plinth | 15% |\n| Each slab | 5% |\n| Possession | 5% |"},
+      };
+      for (String[] doc : docs) {
+        var saved = repo.save("property_documents", ws, null,
+            fields("fileName", doc[1].toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-") + ".md",
+                "storageReference", "demo://synthetic/" + projects.get(i) + "/" + doc[0].toLowerCase(Locale.ROOT),
+                "storageMode", "DEMO_SYNTHETIC", "language", "en", "content", doc[2], "docType", doc[0],
+                "version", 1, "processingStatus", "PENDING_INDEX", "isSynthetic", true),
+            fields("project_id", projects.get(i), "title", doc[1], "status", "PUBLISHED"));
+        repo.event("property_content_versions", ws, "document_id", id(saved.get("id")),
+            fields("version", 1, "content", doc[2], "language", "en", "status", "PUBLISHED"));
+      }
+    }
   }
 
   private Long user(String name, String email, String hash) {

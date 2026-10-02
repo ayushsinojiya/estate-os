@@ -49,15 +49,20 @@ final class ProviderHttpClient {
         return call(() -> client.delete().uri(path).retrieve());
     }
 
-    /** One file plus plain form fields, as multipart/form-data. */
+    /** One file plus plain form fields, as multipart/form-data, in the part named "files". */
     Map<String, Object> multipart(String path, Map<String, String> fields, String filename, String contentType,
                                   byte[] content) {
+        return multipart(path, fields, "files", filename, contentType, content);
+    }
+
+    Map<String, Object> multipart(String path, Map<String, String> fields, String part, String filename,
+                                  String contentType, byte[] content) {
         var parts = new org.springframework.util.LinkedMultiValueMap<String, Object>();
         fields.forEach((key, value) -> { if (value != null) parts.add(key, value); });
         var headers = new org.springframework.http.HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(contentType));
-        headers.setContentDispositionFormData("files", filename);
-        parts.add("files", new org.springframework.http.HttpEntity<>(content, headers));
+        headers.setContentDispositionFormData(part, filename);
+        parts.add(part, new org.springframework.http.HttpEntity<>(content, headers));
         return call(() -> client.post().uri(path).contentType(MediaType.MULTIPART_FORM_DATA).body(parts).retrieve());
     }
 

@@ -102,6 +102,30 @@ class IntegrationAdapterTest {
         assertThat(rag.getSource(Map.of("workspaceId", WORKSPACE, "sourceId", uploaded.get("id")))).containsEntry("status", "PUBLISHED");
     }
 
+    @Test void whatsappSendsApprovedTemplatesOnly() throws IOException {
+        RestWhatsAppClient whatsapp = new RestWhatsAppClient(server(200,
+            "{\"messages\":[{\"id\":\"wamid.ABC\"}]}", 0, 2000), "1234567890");
+        Map<String, Object> result = whatsapp.sendTemplate(new HashMap<>(Map.of("workspaceId", WORKSPACE,
+            "to", "+91 98765 43210", "template", "visit_confirmation", "templateLanguage", "mr",
+            "components", List.of(Map.of("type", "body", "parameters", List.of(Map.of("type", "text", "text", "Asha")))))));
+        assertThat(path.get()).isEqualTo("/1234567890/messages");
+        assertThat(body.get()).contains("\"type\":\"template\"", "\"name\":\"visit_confirmation\"", "\"code\":\"mr\"",
+            "\"to\":\"919876543210\"", "\"messaging_product\":\"whatsapp\"");
+        assertThat(result).containsEntry("messageId", "wamid.ABC").containsEntry("status", "SENT");
+        assertThatThrownBy(() -> whatsapp.sendTemplate(Map.of("workspaceId", WORKSPACE, "to", "123",
+            "template", "x", "templateLanguage", "en"))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void whatsappIsMockedInMockModeAndDisabledWithoutCredentials() {
+        MockEnvironment demo = new MockEnvironment().withProperty("app.integrations.mode", "mock");
+        demo.setActiveProfiles("demo");
+        assertThat(new IntegrationConfiguration(demo).whatsAppClient()).isInstanceOf(MockWhatsAppClient.class);
+        MockEnvironment rest = new MockEnvironment();
+        assertThat(new IntegrationConfiguration(rest).whatsAppClient()).isInstanceOf(DisabledWhatsAppClient.class);
+        assertThatThrownBy(() -> new DisabledWhatsAppClient().sendTemplate(Map.of()))
+            .isInstanceOf(ExternalServiceException.class).hasMessageContaining("not configured");
+    }
+
     @Test void invalidOrDraftScopeNeverReachesProvider() throws IOException {
         RestRagServiceClient rag = new RestRagServiceClient(server(200, "{}", 0, 2000));
         Map<String, Object> draft = document();

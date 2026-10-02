@@ -9,7 +9,7 @@ import { configureApi } from "../api/client";
 const auth = vi.hoisted(() => ({ workspaceId: "7", canManage: true }));
 vi.mock("../hooks/useAuth", () => ({ useAuth: () => auth }));
 const id = "799c7ce2-6723-462c-8e50-06f80275667c";
-const source = { id, originalFileName: "brochure.pdf", fileSizeBytes: 1024, status: "ACTIVE", stage: "COMPLETE", version: 1, activeVersion: "f09f2e57-ed02-4da8-a518-01ebc3d572bf", activeVersionNumber: 1 };
+const source = { id, fileName: "brochure.pdf", sizeBytes: 1024, status: "PUBLISHED", docType: "BROCHURE", version: 1, pageCount: 2, chunkCount: 9, costUsd: 0, lowConfidencePageCount: 0 };
 let fetchMock: ReturnType<typeof vi.fn>;
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 const page = (items: unknown[]) => ({ items, page: 0, size: 20, total: items.length });
@@ -23,30 +23,28 @@ beforeEach(() => {
   configureApi("crm-token", "7");
   fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
     if (url.includes("/knowledge/sources?")) return json(page([source]));
-    if (url.includes("/files?")) return json(page([{ ...source, id: "12", originalFileName: "legacy.zip", status: "STORED" }]));
-    if (url.endsWith(`/knowledge/sources/${id}`) && !options?.method) return json({ source, versions: [{ id: "v1", version: 1, status: "ACTIVE" }], jobs: [], logs: [{ id: "l1", stage: "PUBLISH", message: "Published grounded facts" }], events: [{ id: "a1", action: "UPLOAD", user_id: "42" }] });
-    if (url.endsWith("/batches") || url.endsWith("/replace")) return json({ batchId: "batch-1", results: [{ id, filename: "new.csv", status: "QUEUED" }] });
-    return json({ jobId: "job-1", status: "QUEUED" });
+    if (url.includes("/files?")) return json(page([{ id: "12", originalFileName: "legacy.zip", fileSizeBytes: 1024, status: "STORED" }]));
+    if (url.endsWith(`/knowledge/sources/${id}`) && !options?.method) return json({ ...source, versions: [{ version: 1, status: "PUBLISHED", createdAt: "2026-10-01T10:00:00Z" }], pages: [{ page: 1, provider: "openai:gpt-4o-mini", confidence: 0.95 }, { page: 2, provider: "pdf-text-layer", confidence: 0.5 }], lowConfidencePages: [2], warnings: ["1 page(s) were parsed with low confidence; check pages [2]"] });
+    if (url.endsWith("/batches") || url.endsWith("/replace")) return json({ batchId: "batch-1", results: [{ id, filename: "new.csv", status: "UPLOADED" }] });
+    return json({ ...source, status: "UPLOADED" });
   });
   vi.stubGlobal("fetch", fetchMock);
 });
 
 describe("knowledge sources", () => {
-  it("uses the live status contract and displays the version number instead of its UUID", async () => {
+  it("uses the knowledge service status contract and shows the live version", async () => {
     const user = userEvent.setup();
     mount();
-    expect(await screen.findByText("v1 · live v1")).toBeInTheDocument();
+    expect(await screen.findByText("v1 · live")).toBeInTheDocument();
     await user.click(screen.getByRole("combobox", { name: "Filter by status" }));
-    await user.click(screen.getByRole("option", { name: "Active" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.includes("status=ACTIVE"))).toBe(true));
+    await user.click(screen.getByRole("option", { name: "Published" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.includes("status=PUBLISHED"))).toBe(true));
   });
 
-  it("does not offer Retry for a permanent parser rejection", async () => {
-    fetchMock.mockImplementation(async () => json(page([{ ...source, status: "FAILED", retryable: false }])));
+  it("flags sources with low-confidence pages", async () => {
+    fetchMock.mockImplementation(async () => json(page([{ ...source, lowConfidencePageCount: 1 }])));
     mount();
-    await screen.findByText("brochure.pdf");
-    expect(screen.queryByRole("button", {name: "Retry brochure.pdf"})).not.toBeInTheDocument();
-    expect(screen.getByRole("button", {name: "Replace brochure.pdf"})).toBeEnabled();
+    expect(await screen.findByText("Check Pages")).toBeInTheDocument();
   });
   it("uploads a batch immediately from the single upload entrypoint and preserves per-file results", async () => {
     const user = userEvent.setup();
@@ -81,12 +79,13 @@ describe("knowledge sources", () => {
     expect(screen.queryByRole("button", { name: "Delete brochure.pdf" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "View history for brochure.pdf" }));
     const dialog = await screen.findByRole("dialog");
-    expect(await within(dialog).findByText("Processing logs")).toBeInTheDocument();
-    expect(within(dialog).getByText("Audit activity")).toBeInTheDocument();
+    expect(await within(dialog).findByText("Versions")).toBeInTheDocument();
+    expect(within(dialog).getByText("p2 · 50%")).toBeInTheDocument();
+    expect(within(dialog).getByText(/low confidence/)).toBeInTheDocument();
   });
 
   it("retries failed ingestion and confirms deletion before queueing it", async () => {
-    fetchMock.mockImplementation(async (url: string) => url.includes("/knowledge/sources?") ? json(page([{ ...source, status: "FAILED", stage: "EMBEDDING", failureReason: "Embedding unavailable" }])) : json({ jobId: "job-1", status: "QUEUED" }));
+    fetchMock.mockImplementation(async (url: string) => url.includes("/knowledge/sources?") ? json(page([{ ...source, status: "FAILED", error: "Embedding unavailable" }])) : json({ ...source, status: "UPLOADED" }));
     const user = userEvent.setup();
     mount();
     await user.click(await screen.findByRole("button", { name: "Retry brochure.pdf" }));
@@ -110,21 +109,21 @@ describe("knowledge sources", () => {
 
   it("shows service configuration errors and retains access to legacy history", async () => {
     const original = fetchMock.getMockImplementation() as (url: string, options?: RequestInit) => Promise<Response>;
-    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.includes("/knowledge/") ? json({ message: "Set RAG_INGESTION_TOKEN" }, 503) : original(url, options));
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.includes("/knowledge/") ? json({ message: "Set RAG_SERVICE_TOKEN" }, 503) : original(url, options));
     const user = userEvent.setup();
     mount();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Set RAG_INGESTION_TOKEN");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Set RAG_SERVICE_TOKEN");
     await user.click(screen.getByRole("button", { name: "Legacy stored files" }));
     expect(await screen.findByText("legacy.zip")).toBeInTheDocument();
   });
 
   it("polls a queued source until completion then stops", async () => {
     let reads = 0;
-    fetchMock.mockImplementation(async () => json(page([{ ...source, status: ++reads === 1 ? "QUEUED" : "COMPLETED" }])));
+    fetchMock.mockImplementation(async () => json(page([{ ...source, status: ++reads === 1 ? "PARSING" : "PUBLISHED" }])));
     mount();
-    expect(await within(await screen.findByRole("table")).findByText("Queued")).toBeInTheDocument();
+    expect(await within(await screen.findByRole("table")).findByText("Parsing")).toBeInTheDocument();
     await waitFor(() => expect(reads).toBe(2), { timeout: 3500 });
-    await waitFor(() => expect(within(screen.getByRole("table")).queryByText("Queued")).not.toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole("table")).queryByText("Parsing")).not.toBeInTheDocument());
     const completedReads = reads;
     await new Promise((resolve) => setTimeout(resolve, 2300));
     expect(reads).toBe(completedReads);

@@ -53,7 +53,13 @@ public class TenantRepository {
           "files",
           "api_request_logs",
           "outbox_events",
-          "idempotency_keys");
+          "idempotency_keys",
+          "visit_slot_templates",
+          "visit_slot_blackouts",
+          "project_agents",
+          "callbacks",
+          "dnc_numbers",
+          "scheduled_calls");
   private final NamedParameterJdbcTemplate db;
   private final DtoMapper json;
 
@@ -159,7 +165,9 @@ public class TenantRepository {
               "voice_sessions",
               "appointments",
               "handover_records",
-              "notifications")
+              "notifications",
+              "callbacks",
+              "scheduled_calls")
           .contains(table))
         throw ApiException.bad("Status filtering is not supported on this resource");
       where.append(" AND status=:status");
@@ -180,7 +188,9 @@ public class TenantRepository {
                           "handover_records")
                       .contains(table);
               case "leadId" ->
-                  Set.of("voice_sessions", "appointments", "handover_records").contains(table);
+                  Set.of("voice_sessions", "appointments", "handover_records", "callbacks",
+                          "scheduled_calls")
+                      .contains(table);
               case "agentId" -> Set.of("leads", "appointments", "handover_records").contains(table);
               default -> Set.of("units", "floors").contains(table);
             };

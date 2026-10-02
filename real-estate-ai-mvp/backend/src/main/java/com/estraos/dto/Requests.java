@@ -150,7 +150,97 @@ public final class Requests {
       Boolean doNotCall,
       @Size(max = 200) String doNotCallBasis,
       @Size(max = 500) String failureReason,
-      @Size(max = 2000) List<Map<String, Object>> transcript) {}
+      @Size(max = 2000) List<Map<String, Object>> transcript,
+      // ---- added for the real-estate agent; mirrored in voice-agent/app/crm/ingest.py
+      @Pattern(regexp = "INBOUND|OUTBOUND_NEW_LEAD|VISIT_REMINDER|CALLBACK|RE_ENGAGEMENT") String callType,
+      @Positive Long appointmentId,
+      @Positive Long callbackId,
+      @Pattern(regexp = "CONFIRMED|RESCHEDULED|CANCELLED|NO_ANSWER") String visitOutcome,
+      Instant callbackAt,
+      Boolean handoverRequested,
+      @Pattern(regexp = "CUSTOMER_ASKED|NEGOTIATION|LEGAL|HOT_LEAD|UNANSWERED") String handoverReason,
+      @Pattern(regexp = "HOT|WARM|COLD") String leadTemperature,
+      @Pattern(regexp = "SELF_USE|INVESTMENT") String purpose,
+      @Pattern(regexp = "READY|UNDER_CONSTRUCTION|ANY") String possessionPreference,
+      Boolean whatsappConsent,
+      @Size(max = 4) List<@Pattern(regexp = "BROCHURE|VISIT_CONFIRMATION") String> whatsappRequests,
+      @Size(max = 20) List<@Size(max = 80) String> citations,
+      @Size(max = 40) String promptVersion) {}
+
+  // ---------------------------------------------------------------- site-visit slots
+
+  public record SlotWindow(
+      @NotEmpty @Size(max = 7) List<@NotNull @Min(1) @Max(7) Integer> days,
+      @NotNull LocalTime start,
+      @NotNull LocalTime end,
+      @NotNull @Min(15) @Max(240) Integer slotMinutes,
+      @NotNull @Min(1) @Max(100) Integer capacity) {}
+
+  public record SlotTemplates(@NotNull @Size(max = 14) List<@NotNull @jakarta.validation.Valid SlotWindow> windows) {}
+
+  public record Blackout(
+      @NotNull Instant startsAt, @NotNull Instant endsAt, @Size(max = 300) String reason) {}
+
+  public record ProjectAgent(@NotNull @Positive Long userId, Boolean available) {}
+
+  public record ProjectAgents(
+      @NotNull @Size(max = 50) List<@NotNull @jakarta.validation.Valid ProjectAgent> agents) {}
+
+  public record MemberAvailability(@NotNull Boolean available) {}
+
+  /** Voice agent: book a visit into a slot it offered; the CRM assigns the sales agent. */
+  public record VoiceVisit(
+      @NotNull @Positive Long leadId,
+      @NotNull @Positive Long projectId,
+      @NotNull Instant slotStart,
+      @Positive Long unitId,
+      @Size(max = 5000) String notes,
+      String language,
+      @Size(max = 80) String callId) {}
+
+  public record VisitReschedule(@NotNull Instant slotStart, @Size(max = 500) String reason) {}
+
+  public record VisitChange(@Size(max = 500) String reason) {}
+
+  // ---------------------------------------------------------------- callbacks, DNC, lead merge
+
+  public record VoiceCallback(
+      @NotNull @Positive Long leadId,
+      @NotNull Instant dueAt,
+      @Size(max = 500) String reason,
+      @Pattern(regexp = "CUSTOMER|AGENT|SYSTEM") String requestedBy) {}
+
+  public record Callback(
+      @NotNull Instant dueAt,
+      @Size(max = 500) String reason,
+      @Pattern(regexp = "CUSTOMER|AGENT|SYSTEM") String requestedBy) {}
+
+  public record Dnc(
+      @NotBlank @Size(max = 30) String phone,
+      @Size(max = 300) String reason,
+      @Positive Long leadId,
+      @Size(max = 40) String source) {}
+
+  /** Field-merge update: only non-null fields are applied; status only ever moves forward. */
+  public record LeadPatch(
+      @Size(max = 160) String name,
+      @Email @Size(max = 254) String email,
+      String language,
+      @Pattern(regexp = "BUY|RENT") String intent,
+      @DecimalMin("0") BigDecimal budgetMin,
+      @DecimalMin("0") BigDecimal budgetMax,
+      @Size(max = 300) String location,
+      @Size(max = 40) String propertyType,
+      @Size(max = 8) List<@NotNull @Min(0) @Max(20) Integer> bhk,
+      @Size(max = 100) String possessionTimeline,
+      @Pattern(regexp = "SELF_USE|INVESTMENT") String purpose,
+      @Pattern(regexp = "READY|UNDER_CONSTRUCTION|ANY") String possessionPreference,
+      @Positive Long projectId,
+      String status,
+      @Min(0) @Max(100) Integer leadScore,
+      @Pattern(regexp = "HOT|WARM|COLD") String leadTemperature,
+      Boolean whatsappConsent,
+      @Size(max = 2000) String note) {}
 
   public record Building(@NotBlank @Size(max = 160) String name) {}
 

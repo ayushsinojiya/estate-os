@@ -60,6 +60,29 @@ app:
     notification:
       url: ${NOTIFICATION_SERVICE_URL:}
       api-key: ${NOTIFICATION_API_KEY:}
+  # Outbound calls placed by the CRM through the voice agent (reminders, callbacks, re-engagement).
+  calls:
+    scheduler-enabled: ${CALL_SCHEDULER_ENABLED:true}
+    poll-ms: ${CALL_SCHEDULER_POLL_MS:60000}
+    window-start: ${CALLING_HOURS_START:09:00}
+    window-end: ${CALLING_HOURS_END:21:00}
+    resume-at: ${CALLING_RESUME_AT:09:30}
+    visit-reminder-time: ${VISIT_REMINDER_TIME:18:00}
+    same-day-hours-before: ${VISIT_REMINDER_SAME_DAY_HOURS:2}
+    reengage-after-days: ${REENGAGE_AFTER_DAYS:7}
+    reengage-max-attempts: ${REENGAGE_MAX_ATTEMPTS:2}
+    daily-attempt-cap: ${DAILY_CALL_ATTEMPT_CAP:2}
+    new-lead-delay-s: ${NEW_LEAD_CALL_DELAY_S:120}
+  visits:
+    min-lead-minutes: ${VISIT_MIN_LEAD_MINUTES:60}
+  whatsapp:
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+    access-token: ${WHATSAPP_ACCESS_TOKEN:}
+    api-version: ${WHATSAPP_API_VERSION:v21.0}
+    template-lang-map: '${WHATSAPP_TEMPLATE_LANG_MAP:{"en":"en","hi":"hi","mr":"mr","gu":"gu"}}'
+    app-secret: ${WHATSAPP_APP_SECRET:}
+    verify-token: ${WHATSAPP_VERIFY_TOKEN:}
+    office-phone: ${WHATSAPP_OFFICE_PHONE:}
   knowledge:
     sync-enabled: ${KNOWLEDGE_SYNC_ENABLED:true}
     sync-poll-ms: ${KNOWLEDGE_SYNC_POLL_MS:30000}

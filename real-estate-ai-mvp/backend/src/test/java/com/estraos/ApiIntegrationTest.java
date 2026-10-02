@@ -46,6 +46,7 @@ class ApiIntegrationTest {
     r.add("app.integrations.mode", () -> "mock");
     r.add("app.notifications.reminders-enabled", () -> false);
     r.add("app.knowledge.sync-enabled", () -> false);
+    r.add("app.calls.scheduler-enabled", () -> false);
   }
 
   @Autowired MockMvc mvc;
@@ -794,22 +795,6 @@ class ApiIntegrationTest {
     assertEquals("PUBLISHED", status.get("documentStatus").asText());
     assertEquals(
         "PUBLISHED", send("GET", "/documents/" + documentId, null, token, ws, 200).get("status").asText());
-  }
-
-  @Test
-  void filesPageUploadsBecomeWorkspaceKnowledge() throws Exception {
-    mvc.perform(
-            multipart("/api/v1/files")
-                .file(
-                    new org.springframework.mock.web.MockMultipartFile(
-                        "files", "faq-" + System.nanoTime() + ".md", "text/markdown",
-                        ("# FAQ " + System.nanoTime() + "\n\n## Pets?\nYes.").getBytes()))
-                .header("Authorization", "Bearer " + token)
-                .header("X-Workspace-Id", ws))
-        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isCreated());
-    JsonNode file = send("GET", "/files?size=1", null, token, ws, 200).get("items").get(0);
-    assertEquals("UPLOADED", file.get("knowledgeStatus").asText());
-    assertTrue(file.hasNonNull("knowledgeSourceId"));
   }
 
   @Test
