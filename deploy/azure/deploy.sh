@@ -12,7 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$(cd ../.. && pwd)"
 CRM_DIR="$ROOT/real-estate-ai-mvp"
-AGENT_DIR="$ROOT/last try/real-estate-voice-agent"
+AGENT_DIR="$ROOT/voice-agent"
 
 [[ -f azure.env ]] || { echo "Missing azure.env. Copy azure.env.example and fill it in." >&2; exit 1; }
 set -a; . ./azure.env; set +a
