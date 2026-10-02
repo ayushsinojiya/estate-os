@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 
@@ -11,6 +13,8 @@ from rag_service.retrieve import rerank as rerank_mod
 from rag_service.retrieve.rewrite import rewrite
 from rag_service.retrieve.search import Candidate, Scope, Searcher, rrf
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class Retrieval:
@@ -18,6 +22,7 @@ class Retrieval:
     queries: list[str]
     rerank: str
     timings_ms: dict[str, float] = field(default_factory=dict)
+    vector: str = "ok"
 
 
 class Retriever:
@@ -28,7 +33,28 @@ class Retriever:
         self.reranker = reranker
         self.json_model = json_model
 
-    async def run(self, scope: Scope, query: str, k: int, *, rewrite_query: bool) -> Retrieval:
+    async def _vectors(self, queries: list[str], budget_ms: float | None) -> tuple[list | None, str]:
+        """Query embeddings, or None when the provider is slower than the budget or failing.
+
+        Embedding a query is a provider round-trip (often 400-900 ms from India) while the searches
+        take a few milliseconds; on a live call it is better to answer from the keyword and name
+        searches than to miss the turn. A late embedding still lands in the cache, so the next
+        time the question is asked it gets the vector search too.
+        """
+        task = asyncio.ensure_future(self.searcher.embed_queries(queries))
+        task.add_done_callback(lambda t: t.cancelled() or t.exception())  # never "exception never retrieved"
+        try:
+            if budget_ms is None:
+                return await task, "ok"
+            return await asyncio.wait_for(asyncio.shield(task), budget_ms / 1000), "ok"
+        except asyncio.TimeoutError:
+            return None, "skipped:budget"
+        except Exception as exc:  # provider down: keyword search still answers
+            log.warning("query embedding failed (%s); keyword search only", exc)
+            return None, "skipped:error"
+
+    async def run(self, scope: Scope, query: str, k: int, *, rewrite_query: bool,
+                  embed_budget_ms: float | None = None) -> Retrieval:
         s = self.settings
         timings: dict[str, float] = {}
         started = time.perf_counter()
@@ -36,7 +62,7 @@ class Retriever:
         if rewrite_query:
             timings["rewrite"] = (time.perf_counter() - started) * 1000
         t = time.perf_counter()
-        vectors = await self.searcher.embed_queries(queries)
+        vectors, vector_status = await self._vectors(queries, embed_budget_ms)
         timings["embed"] = (time.perf_counter() - t) * 1000
         t = time.perf_counter()
         lists = await self.searcher.candidates(scope, queries, vectors)
@@ -54,4 +80,5 @@ class Retriever:
                 candidate.rerank_score = score
             top.sort(key=lambda c: (-(c.rerank_score or 0.0), -c.score))
         timings["total"] = (time.perf_counter() - started) * 1000
-        return Retrieval(top[:k], queries, status, {key: round(v, 1) for key, v in timings.items()})
+        return Retrieval(top[:k], queries, status, {key: round(v, 1) for key, v in timings.items()},
+                         vector_status)

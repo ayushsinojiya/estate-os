@@ -21,16 +21,18 @@ public class IntegrationConfiguration {
             throw new IllegalStateException("Mock integrations cannot run with a production Spring profile");
     }
 
-    /** The knowledge service is used for real whenever its URL is configured, even in mock mode. */
+    /** A service whose URL is configured is used for real, even in mock mode; the rest stay mocked. */
+    private boolean real(String service) {
+        return !mock || !environment.getProperty("app.integrations." + service + ".url", "").isBlank();
+    }
     @Bean public RagServiceClient ragServiceClient() {
-        boolean configured = !environment.getProperty("app.integrations.rag.url", "").isBlank();
-        return mock && !configured ? new MockRagServiceClient() : new RestRagServiceClient(http("rag"));
+        return real("rag") ? new RestRagServiceClient(http("rag")) : new MockRagServiceClient();
     }
     @Bean public VoiceAgentServiceClient voiceAgentServiceClient() {
-        return mock ? new MockVoiceAgentServiceClient() : new RestVoiceAgentServiceClient(http("voice"));
+        return real("voice") ? new RestVoiceAgentServiceClient(http("voice")) : new MockVoiceAgentServiceClient();
     }
     @Bean public NotificationServiceClient notificationServiceClient() {
-        return mock ? new MockNotificationServiceClient() : new RestNotificationServiceClient(http("notification"));
+        return real("notification") ? new RestNotificationServiceClient(http("notification")) : new MockNotificationServiceClient();
     }
     /**
      * Mock in mock mode. In REST mode the Cloud API client when its credentials are set, otherwise

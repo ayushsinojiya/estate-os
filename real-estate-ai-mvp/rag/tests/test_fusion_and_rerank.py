@@ -63,3 +63,54 @@ def test_voice_snippets_keep_the_relevant_sentences():
     table = "| Charge | Amount |\n|---|---|\n" + "\n".join(f"| Item {i} | ₹{i} |" for i in range(80)) + "\n| Floor rise | ₹40 |"
     focused = focus(table, "floor rise charge", 120, "TABLE")
     assert focused.startswith("| Charge | Amount |\n|---|---|") and "Floor rise" in focused
+
+
+class _SlowSearcher:
+    """Embedding slower than the budget (or failing); the searches themselves are instant."""
+
+    def __init__(self, delay_s: float = 0.0, fail: bool = False):
+        self.delay_s, self.fail, self.embedded, self.seen_vectors = delay_s, fail, 0, "unset"
+
+    async def embed_queries(self, queries):
+        await asyncio.sleep(self.delay_s)
+        if self.fail:
+            raise RuntimeError("provider down")
+        self.embedded += 1
+        return [[0.0] for _ in queries]
+
+    async def candidates(self, scope, queries, vectors):
+        self.seen_vectors = vectors
+        return [[], [{"id": i, "context_header": "", "content": ""} for i in (5, 6)], []]
+
+
+def _retriever(searcher):
+    from rag_service.config import Settings
+    from rag_service.retrieve.retriever import Retriever
+    from rag_service.retrieve.search import Scope
+    return Retriever(Settings(reranker="none"), searcher, None, None), Scope(1)
+
+
+def test_voice_answers_from_keyword_search_when_embedding_is_over_budget():
+    async def go():
+        searcher = _SlowSearcher(delay_s=0.2)
+        retriever, scope = _retriever(searcher)
+        result = await retriever.run(scope, "payment plan", 4, rewrite_query=False, embed_budget_ms=20)
+        assert result.vector == "skipped:budget" and searcher.seen_vectors is None
+        assert [c.id for c in result.items] == [5, 6]
+        assert result.timings_ms["total"] < 150
+        await asyncio.sleep(0.3)
+        assert searcher.embedded == 1  # the late embedding still completed (and was cached)
+    asyncio.run(go())
+
+
+def test_embedding_failure_falls_back_to_keyword_search():
+    retriever, scope = _retriever(_SlowSearcher(fail=True))
+    result = asyncio.run(retriever.run(scope, "q", 4, rewrite_query=False, embed_budget_ms=300))
+    assert result.vector == "skipped:error" and [c.id for c in result.items] == [5, 6]
+
+
+def test_no_budget_waits_for_the_embedding():
+    searcher = _SlowSearcher(delay_s=0.05)
+    retriever, scope = _retriever(searcher)
+    result = asyncio.run(retriever.run(scope, "q", 4, rewrite_query=False))
+    assert result.vector == "ok" and searcher.seen_vectors == [[0.0]]

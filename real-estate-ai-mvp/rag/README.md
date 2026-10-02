@@ -52,7 +52,10 @@ upload ─► UPLOADED ─► PARSING ─► EMBEDDING ─► PUBLISHED      (FA
   Reciprocal Rank Fusion (k=60), and reranks the top 20 when it fits the budget
   (`RERANKER=bge|cohere|none`; local `BAAI/bge-reranker-v2-m3` by default). Reranking predicts its
   own latency from what it has measured and is skipped, with a log line, when the prediction exceeds
-  `RERANK_BUDGET_MS` (150).
+  `RERANK_BUDGET_MS` (150). On the live-call path the query embedding (a provider round-trip,
+  400–900 ms measured from Pune) has its own budget, `VOICE_EMBED_BUDGET_MS` (300): past it the
+  answer comes from the keyword and name searches alone (`"vector": "skipped:budget"` in the
+  response) and the late embedding is still cached for the next time that question is asked.
 - **Live inventory is never embedded.** Unit prices, availability and BHK counts come only from the
   CRM. Price-sheet chunks are for structure (payment stages, floor rise, PLC, parking, maintenance,
   GST). Every retrieval response carries `"inventoryAuthoritative": "crm"`.

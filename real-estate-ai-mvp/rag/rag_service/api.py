@@ -223,7 +223,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             raise HTTPException(401, "unauthorised")
         retriever: Retriever = request.app.state.retriever
         result = await retriever.run(Scope(body.workspaceId, body.projectId, body.docTypes), body.query, body.k,
-                                     rewrite_query=settings.rewrite_on_voice)
+                                     rewrite_query=settings.rewrite_on_voice,
+                                     embed_budget_ms=settings.voice_embed_budget_ms)
         limit = settings.voice_snippet_chars
         return {
             "workspaceId": str(body.workspaceId), "projectId": _id(body.projectId), "query": body.query,
@@ -237,7 +238,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 "score": round(c.rerank_score if c.rerank_score is not None else c.score, 4),
                 "content": focus(c.row["content"], body.query, limit, c.row["chunk_type"])}
                 for c in result.items],
-            "rerank": result.rerank, "timingsMs": result.timings_ms,
+            "rerank": result.rerank, "vector": result.vector, "timingsMs": result.timings_ms,
         }
 
     # ---- CRM search (contract of RestRagServiceClient / IntegrationPayloads.publishedSearch)

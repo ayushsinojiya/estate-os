@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     cohere_rerank_model: str = "rerank-v3.5"
     rerank_budget_ms: float = 150.0
+    # Live-call path only: past this, answer from keyword/name search without the query embedding.
+    voice_embed_budget_ms: float = 300.0
     rerank_candidates: int = 20
     candidate_pool: int = 30
     rrf_k: int = 60

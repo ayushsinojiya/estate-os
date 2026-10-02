@@ -137,12 +137,13 @@ class Searcher:
                 ORDER BY sim DESC, c.id LIMIT %(n)s""", params)).fetchall()
 
     async def candidates(self, scope: Scope, queries: list[str],
-                         vectors: list[np.ndarray]) -> list[list[dict[str, Any]]]:
+                         vectors: list[np.ndarray] | None) -> list[list[dict[str, Any]]]:
         """[vector, keyword, names] lists for every query, all read from ONE database snapshot.
 
         The three searches run concurrently on three connections. Without a shared snapshot they
         could straddle a publish commit and return chunks of the old and the new version together;
         so the first connection exports its snapshot and the other two import it.
+        `vectors=None` (embedding over budget) leaves the vector lists empty.
         """
         pool = self.db.pool
         async with pool.connection() as a, pool.connection() as b, pool.connection() as c:
@@ -158,7 +159,10 @@ class Searcher:
                     return [await fn(conn, scope, arg) for arg in args_per_query]
 
                 vector_lists, keyword_lists, name_lists = await asyncio.gather(
-                    each(self._vector, a, vectors), each(self._keyword, b, queries), each(self._names, c, queries))
+                    each(self._vector, a, vectors if vectors is not None else []),
+                    each(self._keyword, b, queries), each(self._names, c, queries))
+                if vectors is None:
+                    vector_lists = [[] for _ in queries]
             finally:
                 for conn in conns:
                     await conn.execute("ROLLBACK")
