@@ -100,8 +100,13 @@ class OutboundDialer:
                 placed += 1
                 continue
             try:
+                # The provider gets only the request id (and a language hint); the full request,
+                # context included, stays in the registry and is looked up when the call connects.
+                params = {"request_id": record.request_id}
+                if record.custom.get("language"):
+                    params["language"] = record.custom["language"]
                 result = await self.queue.add_lead(
-                    self.did_number, record.phone, {**record.custom, "request_id": record.request_id},
+                    self.did_number, record.phone, params,
                     websocket_url=self.websocket_url, webhook_url=self.webhook_url)
             except Exception as exc:  # noqa: BLE001 - provider errors are recorded, never raised
                 attempts = record.attempts + 1

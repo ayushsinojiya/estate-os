@@ -1,0 +1,531 @@
+"""The tools Riya may call during a call.
+
+Every tool has a strict JSON schema (no extra properties), its arguments are validated again here
+with pydantic, it has a timeout, and — where it takes a moment — a filler phrase the engine plays
+while it runs. Results are kept short and speakable, and everything a tool returns is recorded as
+evidence for the price guard: a rupee figure the model says must have come from here.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from app.crm.client import CrmError
+from app.domain.base import Tool, ToolOutcome
+from app.llm.base import ToolSpec
+
+from .money import spoken_range
+from .timeutil import as_utc_iso, clamp_to_calling_hours, now_ist, parse_when, spoken_time
+
+if TYPE_CHECKING:
+    from .conversation import RealEstateConversation
+
+log = logging.getLogger(__name__)
+
+DOC_TYPES = ["BROCHURE", "PRICE_SHEET", "PAYMENT_PLAN", "FAQ", "RERA", "LEGAL", "FLOOR_PLAN", "OTHER"]
+PROPERTY_TYPES = ["APARTMENT", "VILLA", "PLOT", "COMMERCIAL"]
+
+
+class _Args(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchArgs(_Args):
+    budget_max_inr: int | None = Field(default=None, ge=100_000, le=10_000_000_000)
+    budget_min_inr: int | None = Field(default=None, ge=0, le=10_000_000_000)
+    bhk: list[int] = Field(default_factory=list, max_length=4)
+    locality: str | None = Field(default=None, max_length=80)
+    property_type: Literal["APARTMENT", "VILLA", "PLOT", "COMMERCIAL"] | None = None
+
+
+class ProjectArgs(_Args):
+    project: str = Field(min_length=1, max_length=80)
+
+
+class PriceArgs(_Args):
+    project: str = Field(min_length=1, max_length=80)
+    bhk: int = Field(ge=0, le=10)
+
+
+class AvailabilityArgs(_Args):
+    project: str = Field(min_length=1, max_length=80)
+    bhk: int | None = Field(default=None, ge=0, le=10)
+
+
+class KnowledgeArgs(_Args):
+    question: str = Field(min_length=2, max_length=300)
+    project: str | None = Field(default=None, max_length=80)
+    doc_types: list[Literal["BROCHURE", "PRICE_SHEET", "PAYMENT_PLAN", "FAQ", "RERA", "LEGAL", "FLOOR_PLAN",
+                            "OTHER"]] | None = None
+
+
+class SlotArgs(_Args):
+    project: str = Field(min_length=1, max_length=80)
+    preferred_day: str | None = Field(default=None, max_length=40)
+
+
+class BookArgs(_Args):
+    project: str = Field(min_length=1, max_length=80)
+    slot_start: str = Field(min_length=10, max_length=40)
+    unit: str | None = Field(default=None, max_length=40)
+
+
+class RescheduleArgs(_Args):
+    slot_start: str = Field(min_length=10, max_length=40)
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class ReasonArgs(_Args):
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class NoArgs(_Args):
+    pass
+
+
+class CallbackArgs(_Args):
+    when: str = Field(min_length=1, max_length=60)
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class HumanArgs(_Args):
+    reason: Literal["CUSTOMER_ASKED", "NEGOTIATION", "LEGAL", "UNANSWERED"]
+    question: str | None = Field(default=None, max_length=300)
+
+
+class WhatsAppArgs(_Args):
+    kind: Literal["BROCHURE", "VISIT_CONFIRMATION"]
+    customer_agreed: bool
+
+
+class EndArgs(_Args):
+    reason: Literal["COMPLETED", "CALLBACK_SCHEDULED", "NOT_INTERESTED", "WRONG_NUMBER", "DO_NOT_CALL",
+                    "CUSTOMER_BUSY"]
+
+
+class SaveArgs(_Args):
+    name: str | None = Field(default=None, max_length=80)
+    intent: Literal["BUY", "RENT"] | None = None
+    budget_min_inr: int | None = Field(default=None, ge=0, le=10_000_000_000)
+    budget_max_inr: int | None = Field(default=None, ge=0, le=10_000_000_000)
+    bhk: list[int] | None = Field(default=None, max_length=4)
+    locality: str | None = Field(default=None, max_length=80)
+    project: str | None = Field(default=None, max_length=80)
+    property_type: Literal["APARTMENT", "VILLA", "PLOT", "COMMERCIAL"] | None = None
+    possession: Literal["READY", "UNDER_CONSTRUCTION", "ANY"] | None = None
+    timeline_months: int | None = Field(default=None, ge=0, le=120)
+    purpose: Literal["SELF_USE", "INVESTMENT"] | None = None
+    readback: Literal["confirmed", "corrected"] | None = None
+
+
+def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
+    return {"type": "object", "properties": properties, "required": required or [], "additionalProperties": False}
+
+
+_STR = {"type": "string"}
+_INT = {"type": "integer"}
+_PROJECT = {"type": "string", "description": "Project name as the caller said it, or its id."}
+_SLOT = {"type": "string", "description": "A slot_start exactly as get_visit_slots returned it."}
+
+
+class ToolBox:
+    def __init__(self, conversation: "RealEstateConversation"):
+        self.c = conversation
+        self.s = conversation.state
+
+    # ---------------------------------------------------------------- plumbing
+
+    def _tool(self, name: str, description: str, schema: dict[str, Any], model: type[_Args], handler,
+              timeout_s: float = 3.0, filler: str | None = "filler_search") -> Tool:
+        async def run(arguments: dict[str, Any]) -> ToolOutcome:
+            try:
+                args = model.model_validate(arguments)
+            except ValidationError as exc:
+                return ToolOutcome({"error": "invalid_arguments",
+                                    "details": [e["msg"] for e in exc.errors()][:3]})
+            try:
+                outcome = await handler(args)
+            except CrmError as exc:
+                log.warning("tool %s: CRM %s %s", name, exc.status, exc.code)
+                outcome = ToolOutcome({"error": "crm_unavailable" if exc.status >= 500 else "crm_rejected",
+                                       "code": exc.code,
+                                       "instruction": "Apologise briefly and say our team will confirm."})
+            self.s.tool_log.append({"tool": name, "args": arguments,
+                                    "result": {k: v for k, v in outcome.content.items() if k != "chunks"}})
+            self.s.guard.add_result(outcome.content)
+            self.c.advance()
+            return outcome
+
+        return Tool(ToolSpec(name, description, schema), run, timeout_s=timeout_s, filler=filler)
+
+    def _project(self, name: str | None) -> dict[str, Any] | None:
+        if not name:
+            return None
+        return self.c.plugin.resolve_project(name)
+
+    def _unknown_project(self, name: str) -> ToolOutcome:
+        known = [p["name"] for p in (self.c.plugin.catalog or {}).get("projects", [])][:12]
+        return ToolOutcome({"error": "unknown_project", "asked": name, "projects_we_sell": known})
+
+    async def _lead_id(self) -> str | None:
+        if self.s.lead_id:
+            return self.s.lead_id
+        if not self.s.phone:
+            return None
+        lead = await self.c.plugin.crm.find_or_create_lead(self.s.phone, self.s.language)
+        self.s.lead = lead
+        return self.s.lead_id
+
+    # ---------------------------------------------------------------- inventory
+
+    async def search_properties(self, a: SearchArgs) -> ToolOutcome:
+        r = self.s.requirements
+        r.budget_max = a.budget_max_inr or r.budget_max
+        r.budget_min = a.budget_min_inr or r.budget_min
+        r.bhk = a.bhk or r.bhk
+        r.locality = a.locality or r.locality
+        r.property_type = a.property_type or r.property_type
+        budget = a.budget_max_inr or a.budget_min_inr or r.budget_max
+        matches = await self.c.plugin.crm.search_units(budget, a.bhk or r.bhk, a.locality or r.locality, limit=3)
+        options = [{"project": m["projectName"], "projectId": m["projectId"], "locality": m.get("localityName"),
+                    "bhk": m["bhk"], "price": spoken_range(m["priceMinInr"], m["priceMaxInr"]),
+                    "priceMinInr": m["priceMinInr"], "priceMaxInr": m["priceMaxInr"],
+                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate")} for m in matches]
+        self.s.recommended = options
+        self.s.budget_fits = bool(budget) and any(o["priceMinInr"] <= budget * 1.1 for o in options)
+        self.s.action("search_properties")
+        if not options:
+            return ToolOutcome({"options": [], "instruction": "Nothing available matches; ask which requirement "
+                                                              "they could relax, or offer a callback."})
+        return ToolOutcome({"options": options, "note": "Recommend at most two."})
+
+    async def get_project_info(self, a: ProjectArgs) -> ToolOutcome:
+        project = self._project(a.project)
+        if project is None:
+            return self._unknown_project(a.project)
+        info = await self.c.plugin.crm.get_project(project["id"])
+        self.s.requirements.project_id = self.s.requirements.project_id or project["id"]
+        self.s.requirements.project_name = self.s.requirements.project_name or info.get("name")
+        return ToolOutcome({"project": info.get("name"), "projectId": info.get("id"),
+                            "locality": info.get("localityName"), "possession": info.get("possessionDate"),
+                            "reraId": info.get("reraId"),
+                            "availableConfigurations": [{"bhk": u.get("bhk"), "carpetAreaSqft": u.get("carpetAreaSqft")}
+                                                        for u in info.get("unitTypes", [])]})
+
+    async def get_price(self, a: PriceArgs) -> ToolOutcome:
+        project = self._project(a.project)
+        if project is None:
+            return self._unknown_project(a.project)
+        price = await self.c.plugin.crm.get_price(project["id"], a.bhk)
+        self.s.recommended = self.s.recommended or [{"project": project["name"], "bhk": a.bhk}]
+        if price is None:
+            return ToolOutcome({"project": project["name"], "bhk": a.bhk, "available": False,
+                                "instruction": "This configuration is not available; do not offer it."})
+        return ToolOutcome({"project": project["name"], "bhk": a.bhk, "available": True,
+                            "price": spoken_range(price["priceMinInr"], price["priceMaxInr"]),
+                            "priceMinInr": price["priceMinInr"], "priceMaxInr": price["priceMaxInr"],
+                            "availableUnits": price.get("availableUnits")})
+
+    async def get_availability(self, a: AvailabilityArgs) -> ToolOutcome:
+        project = self._project(a.project)
+        if project is None:
+            return self._unknown_project(a.project)
+        result = await self.c.plugin.crm.get_availability(project["id"], a.bhk)
+        units = int(result.get("availableUnits") or 0)
+        return ToolOutcome({"project": project["name"], "bhk": a.bhk, "availableUnits": units, "available": units > 0})
+
+    # ---------------------------------------------------------------- knowledge
+
+    async def ask_knowledge(self, a: KnowledgeArgs) -> ToolOutcome:
+        project = self._project(a.project) if a.project else None
+        project_id = project["id"] if project else self.s.requirements.project_id
+        result = await self.c.plugin.knowledge.retrieve(a.question, project_id, a.doc_types, self.s.language, k=3)
+        self.c.plugin.last_rag_status = result.status
+        if not result.chunks:
+            if a.question not in self.s.unanswered:
+                self.s.unanswered.append(a.question)
+            if "UNANSWERED" not in self.s.escalations:
+                self.s.escalations.append("UNANSWERED")
+            return ToolOutcome({"found": False, "lookup": result.status,
+                                "instruction": "Say a property expert will confirm this; do not guess."})
+        for chunk in result.chunks:
+            doc = str(chunk.get("documentId"))
+            if doc and doc not in self.s.citations:
+                self.s.citations.append(doc)
+        return ToolOutcome({"found": True, "inventoryAuthoritative": "crm", "chunks": [
+            {"documentId": ch.get("documentId"), "title": ch.get("title"), "docType": ch.get("docType"),
+             "page": ch.get("page"), "section": ch.get("sectionPath"), "text": ch.get("content")}
+            for ch in result.chunks]})
+
+    # ---------------------------------------------------------------- visits
+
+    async def get_visit_slots(self, a: SlotArgs) -> ToolOutcome:
+        project = self._project(a.project)
+        if project is None:
+            return self._unknown_project(a.project)
+        wanted = parse_when(a.preferred_day) if a.preferred_day else None
+        today = now_ist().date()
+        start_day = wanted.date() if wanted and wanted.date() >= today else today
+        result = await self.c.plugin.crm.get_slots(project["id"], start_day.isoformat(), 2 if wanted else 3)
+        slots = result.get("slots", [])
+        if wanted:
+            same_day = [s for s in slots if s.get("date") == wanted.date().isoformat()]
+            slots = same_day or slots
+        if len(slots) > 3:  # spread the offer across the day(s) rather than three back-to-back hours
+            slots = [slots[0], slots[len(slots) // 2], slots[-1]]
+        for slot in slots:
+            self.s.offered_slots[slot["start"]] = slot["label"]
+        self.s.requirements.project_id = self.s.requirements.project_id or project["id"]
+        if not slots:
+            return ToolOutcome({"project": project["name"], "slots": [],
+                                "instruction": "No free slots soon; offer a callback to fix a time."})
+        return ToolOutcome({"project": project["name"], "timezone": "Asia/Kolkata",
+                            "slots": [{"slot_start": s["start"], "label": s["label"]} for s in slots]})
+
+    @staticmethod
+    def _same_instant(a: str, b: str) -> bool:
+        try:
+            return datetime.fromisoformat(a.replace("Z", "+00:00")) == datetime.fromisoformat(b.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+
+    def _offered(self, slot_start: str) -> str | None:
+        for start in self.s.offered_slots:
+            if self._same_instant(start, slot_start):
+                return start
+        return None
+
+    async def book_site_visit(self, a: BookArgs) -> ToolOutcome:
+        project = self._project(a.project)
+        if project is None:
+            return self._unknown_project(a.project)
+        offered = self._offered(a.slot_start)
+        if offered is None:
+            return ToolOutcome({"error": "slot_not_offered",
+                                "instruction": "Call get_visit_slots and book one of the offered slots."})
+        lead_id = await self._lead_id()
+        if lead_id is None:
+            return ToolOutcome({"error": "no_lead", "instruction": "Say our team will call to confirm the visit."})
+        try:
+            visit = await self.c.plugin.crm.book_visit(lead_id, project["id"], offered, a.unit, None,
+                                                       self.s.language, self.s.call_id)
+        except CrmError as exc:
+            if exc.status == 409:
+                self.s.offered_slots.pop(offered, None)
+                return ToolOutcome({"error": "slot_taken", "code": exc.code,
+                                    "instruction": "That slot just filled; offer another of the slots."})
+            raise
+        self.s.booked_visit = {"id": str(visit.get("id")), "projectName": project["name"],
+                               "spokenTime": visit.get("spokenTime") or self.s.offered_slots.get(offered),
+                               "agentName": visit.get("agentName"), "status": visit.get("status")}
+        self.s.appointment_id = self.s.appointment_id or str(visit.get("id"))
+        self.s.action("book_site_visit")
+        return ToolOutcome({"booked": True, "project": project["name"], "when": self.s.booked_visit["spokenTime"],
+                            "agentName": visit.get("agentName"), "status": visit.get("status"),
+                            "instruction": "Confirm aloud: project, day, time and the agent's name."})
+
+    def _appointment(self) -> str | None:
+        return self.s.appointment_id or (self.s.booked_visit or {}).get("id") or \
+            str((self.s.context.get("visit") or {}).get("appointmentId") or "") or None
+
+    async def reschedule_visit(self, a: RescheduleArgs) -> ToolOutcome:
+        appointment = self._appointment()
+        if not appointment:
+            return ToolOutcome({"error": "no_visit", "instruction": "There is no visit to reschedule; offer to book one."})
+        offered = self._offered(a.slot_start)
+        if offered is None:
+            return ToolOutcome({"error": "slot_not_offered", "instruction": "Call get_visit_slots first."})
+        try:
+            visit = await self.c.plugin.crm.reschedule_visit(appointment, offered, a.reason)
+        except CrmError as exc:
+            if exc.status == 409:
+                return ToolOutcome({"error": "slot_taken", "instruction": "Offer another slot."})
+            raise
+        self.s.visit_outcome = "RESCHEDULED"
+        self.s.action("reschedule_visit")
+        return ToolOutcome({"rescheduled": True, "when": visit.get("spokenTime"), "agentName": visit.get("agentName")})
+
+    async def cancel_visit(self, a: ReasonArgs) -> ToolOutcome:
+        appointment = self._appointment()
+        if not appointment:
+            return ToolOutcome({"error": "no_visit"})
+        await self.c.plugin.crm.cancel_visit(appointment, a.reason)
+        self.s.visit_outcome = "CANCELLED"
+        self.s.visit_declined = True
+        self.s.action("cancel_visit")
+        return ToolOutcome({"cancelled": True, "instruction": "Ask if a later date would suit; offer a callback."})
+
+    async def confirm_visit(self, a: NoArgs) -> ToolOutcome:
+        appointment = self._appointment()
+        if not appointment:
+            return ToolOutcome({"error": "no_visit"})
+        visit = await self.c.plugin.crm.confirm_visit(appointment)
+        self.s.visit_outcome = "CONFIRMED"
+        self.s.action("confirm_visit")
+        return ToolOutcome({"confirmed": True, "when": visit.get("spokenTime"), "agentName": visit.get("agentName")})
+
+    # ---------------------------------------------------------------- follow-up
+
+    async def _callback(self, due: datetime, reason: str | None, requested_by: str = "CUSTOMER") -> datetime:
+        settings = self.c.plugin.settings
+        due = clamp_to_calling_hours(due, settings.calling_hours_start, settings.calling_hours_end)
+        lead_id = await self._lead_id()
+        if lead_id:
+            created = await self.c.plugin.crm.create_callback(lead_id, due.astimezone(timezone.utc), reason, requested_by)
+            self.s.callback_id = self.s.callback_id or str(created.get("id") or "") or None
+        self.s.callback_at = as_utc_iso(due)
+        return due
+
+    async def schedule_callback(self, a: CallbackArgs) -> ToolOutcome:
+        due = parse_when(a.when)
+        if due is None:
+            return ToolOutcome({"error": "unclear_time", "instruction": "Ask for a day and a rough time."})
+        if due < now_ist() + timedelta(minutes=5):
+            due = now_ist() + timedelta(minutes=30)
+        due = await self._callback(due, a.reason)
+        self.s.action("schedule_callback")
+        return ToolOutcome({"scheduled": True, "whenIst": spoken_time(due),
+                            "note": "Calls are made between 09:00 and 21:00 IST."})
+
+    async def request_human(self, a: HumanArgs) -> ToolOutcome:
+        self.s.handover_reason = self.s.handover_reason or a.reason
+        if a.reason not in self.s.escalations:
+            self.s.escalations.append(a.reason)
+        if a.question and a.question not in self.s.unanswered:
+            self.s.unanswered.append(a.question)
+        # VoiceLink exposes no transfer API, so escalation is always a scheduled expert callback plus
+        # a handover in the CRM (see DECISIONS.md).
+        when = None
+        if not self.s.callback_at:
+            due = await self._callback(now_ist() + timedelta(hours=1), f"Expert follow-up: {a.reason.lower()}",
+                                       requested_by="AGENT")
+            when = spoken_time(due)
+        self.s.action("request_human")
+        return ToolOutcome({"transfer": False, "expertCallback": when or "already scheduled",
+                            "instruction": "Tell them a property expert will call them back."})
+
+    async def send_whatsapp(self, a: WhatsAppArgs) -> ToolOutcome:
+        if not a.customer_agreed:
+            return ToolOutcome({"error": "no_consent", "instruction": "Ask first; send only if they agree."})
+        self.s.whatsapp_consent = True
+        if a.kind not in self.s.whatsapp_requests:
+            self.s.whatsapp_requests.append(a.kind)
+        self.s.action("send_whatsapp")
+        return ToolOutcome({"recorded": True, "note": "It will arrive on WhatsApp shortly after this call."})
+
+    async def mark_do_not_call(self, a: ReasonArgs) -> ToolOutcome:
+        await self.c.mark_dnc(a.reason or "explicit request")
+        return ToolOutcome({"done": True, "instruction": "Apologise briefly and say goodbye."},
+                           end_call=True, end_reason="do_not_call")
+
+    async def end_call(self, a: EndArgs) -> ToolOutcome:
+        self.s.ended_by_agent = a.reason
+        if a.reason == "NOT_INTERESTED":
+            self.s.visit_declined = True
+        return ToolOutcome({"ok": True}, end_call=True, end_reason=a.reason.lower(), skip_closing=True)
+
+    async def save_requirements(self, a: SaveArgs) -> ToolOutcome:
+        r = self.s.requirements
+        patch: dict[str, Any] = {}
+        if a.name:
+            r.name = a.name
+            patch["name"] = a.name
+        if a.intent:
+            r.intent = patch["intent"] = a.intent
+        if a.budget_min_inr is not None:
+            r.budget_min = patch["budgetMin"] = a.budget_min_inr
+        if a.budget_max_inr is not None:
+            r.budget_max = patch["budgetMax"] = a.budget_max_inr
+        if a.bhk:
+            r.bhk = patch["bhk"] = sorted(set(a.bhk))
+        if a.locality:
+            r.locality = patch["location"] = a.locality
+        if a.project:
+            project = self._project(a.project)
+            if project:
+                r.project_id, r.project_name = project["id"], project["name"]
+                patch["projectId"] = project["id"]
+        if a.property_type:
+            r.property_type = patch["propertyType"] = a.property_type
+        if a.possession:
+            r.possession = patch["possessionPreference"] = a.possession
+        if a.timeline_months is not None:
+            r.timeline_months = a.timeline_months
+            r.timeline_text = patch["possessionTimeline"] = f"within {a.timeline_months} months"
+        if a.purpose:
+            r.purpose = patch["purpose"] = a.purpose
+        if a.readback:
+            self.s.readbacks[a.readback] = self.s.readbacks.get(a.readback, 0) + 1
+        for value in (a.budget_min_inr, a.budget_max_inr):
+            if value:
+                self.s.guard.evidence.add(value)  # the caller's own budget may be read back
+        if patch and self.s.lead_id:
+            self.c.background(self.c.plugin.crm.update_lead(self.s.lead_id, patch))
+        return ToolOutcome({"saved": True, "stillUnknown": r.missing()})
+
+    # ---------------------------------------------------------------- catalogue of tools
+
+    def tools(self) -> list[Tool]:
+        t = self._tool
+        return [
+            t("search_properties", "Find available homes matching the caller's budget, BHK and locality (top 3).",
+              _schema({"budget_max_inr": {**_INT, "description": "Upper budget in rupees, e.g. 12000000 for 1.2 crore."},
+                       "budget_min_inr": _INT, "bhk": {"type": "array", "items": _INT},
+                       "locality": _STR, "property_type": {"type": "string", "enum": PROPERTY_TYPES}}),
+              SearchArgs, self.search_properties),
+            t("get_project_info", "A project's locality, possession date, RERA id and available configurations.",
+              _schema({"project": _PROJECT}, ["project"]), ProjectArgs, self.get_project_info),
+            t("get_price", "Current price range for one configuration (the only source of prices).",
+              _schema({"project": _PROJECT, "bhk": _INT}, ["project", "bhk"]), PriceArgs, self.get_price),
+            t("get_availability", "How many units are available now, optionally for one BHK.",
+              _schema({"project": _PROJECT, "bhk": _INT}, ["project"]), AvailabilityArgs, self.get_availability),
+            t("ask_knowledge", "Brochure/FAQ/price-sheet knowledge: amenities, specifications, payment plan, charges, "
+                               "RERA, location. Not for unit prices.",
+              _schema({"question": {**_STR, "description": "Short English keywords, e.g. 'clubhouse swimming pool'."},
+                       "project": _PROJECT,
+                       "doc_types": {"type": "array", "items": {"type": "string", "enum": DOC_TYPES}}}, ["question"]),
+              KnowledgeArgs, self.ask_knowledge, timeout_s=1.2, filler="filler_knowledge"),
+            t("get_visit_slots", "Free site-visit slots for a project (IST). Offer two or three.",
+              _schema({"project": _PROJECT, "preferred_day": {**_STR, "description": "e.g. 'Saturday', 'kal', 'tomorrow'."}},
+                      ["project"]), SlotArgs, self.get_visit_slots, filler="filler_slots"),
+            t("book_site_visit", "Book an offered slot for the caller.",
+              _schema({"project": _PROJECT, "slot_start": _SLOT, "unit": _STR}, ["project", "slot_start"]),
+              BookArgs, self.book_site_visit, timeout_s=5.0, filler="filler_booking"),
+            t("reschedule_visit", "Move the caller's existing visit to an offered slot.",
+              _schema({"slot_start": _SLOT, "reason": _STR}, ["slot_start"]), RescheduleArgs, self.reschedule_visit,
+              timeout_s=5.0, filler="filler_booking"),
+            t("cancel_visit", "Cancel the caller's existing visit.", _schema({"reason": _STR}), ReasonArgs,
+              self.cancel_visit, filler=None),
+            t("confirm_visit", "Confirm the caller's existing visit.", _schema({}), NoArgs, self.confirm_visit,
+              filler=None),
+            t("schedule_callback", "Schedule a call back at the time the caller asked for.",
+              _schema({"when": {**_STR, "description": "ISO date-time in IST, e.g. 2026-10-03T18:00:00+05:30."},
+                       "reason": _STR}, ["when"]), CallbackArgs, self.schedule_callback, filler=None),
+            t("request_human", "Hand the caller to a human property expert.",
+              _schema({"reason": {"type": "string", "enum": ["CUSTOMER_ASKED", "NEGOTIATION", "LEGAL", "UNANSWERED"]},
+                       "question": _STR}, ["reason"]), HumanArgs, self.request_human, filler=None),
+            t("send_whatsapp", "Record that the caller agreed to receive the brochure or visit details on WhatsApp.",
+              _schema({"kind": {"type": "string", "enum": ["BROCHURE", "VISIT_CONFIRMATION"]},
+                       "customer_agreed": {"type": "boolean"}}, ["kind", "customer_agreed"]),
+              WhatsAppArgs, self.send_whatsapp, filler=None),
+            t("mark_do_not_call", "The caller asked not to be called again.", _schema({"reason": _STR}), ReasonArgs,
+              self.mark_do_not_call, filler=None),
+            t("end_call", "End the call politely after saying goodbye.",
+              _schema({"reason": {"type": "string", "enum": ["COMPLETED", "CALLBACK_SCHEDULED", "NOT_INTERESTED",
+                                                             "WRONG_NUMBER", "DO_NOT_CALL", "CUSTOMER_BUSY"]}}, ["reason"]),
+              EndArgs, self.end_call, filler=None),
+            t("save_requirements", "Record what the caller wants as soon as you learn it.",
+              _schema({"name": _STR, "intent": {"type": "string", "enum": ["BUY", "RENT"]},
+                       "budget_min_inr": _INT, "budget_max_inr": _INT, "bhk": {"type": "array", "items": _INT},
+                       "locality": _STR, "project": _PROJECT,
+                       "property_type": {"type": "string", "enum": PROPERTY_TYPES},
+                       "possession": {"type": "string", "enum": ["READY", "UNDER_CONSTRUCTION", "ANY"]},
+                       "timeline_months": _INT, "purpose": {"type": "string", "enum": ["SELF_USE", "INVESTMENT"]},
+                       "readback": {"type": "string", "enum": ["confirmed", "corrected"]}}),
+              SaveArgs, self.save_requirements, timeout_s=1.0, filler=None),
+        ]

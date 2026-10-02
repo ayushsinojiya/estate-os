@@ -52,6 +52,10 @@ public class CallOutcomeService {
     boolean hot = "HOT".equals(call.leadTemperature());
     if (Boolean.TRUE.equals(call.handoverRequested()) || hot)
       applied.put("handoverId", handover(ws, call, lead, sessionId, hot, actor));
+    if ("NO_ANSWER".equals(call.failureReason())) {
+      retryUnanswered(ws, call);
+      return applied;
+    }
     // A scheduled call this record answers is done; so is the callback it was placed for.
     db.update("UPDATE scheduled_calls SET status='DONE', updated_at=now(), data=data||jsonb_build_object("
             + "'completedBySession', CAST(:session AS text)) WHERE workspace_id=:ws AND lead_id=:lead AND"
@@ -62,6 +66,26 @@ public class CallOutcomeService {
           + " status IN ('SCHEDULED','DIALING')", Map.of("ws", ws, "id", call.callbackId()));
     if (Boolean.TRUE.equals(call.whatsappConsent())) applied.put("whatsapp", whatsapp(ws, call, actor));
     return applied;
+  }
+
+  /**
+   * Nobody picked up: the scheduled call goes back in the queue two hours later (the dispatcher
+   * still applies calling hours and the daily cap), up to three attempts in all.
+   */
+  private void retryUnanswered(Long ws, Requests.CallIngest call) {
+    var rows = db.queryForList(
+        "SELECT id, attempts FROM scheduled_calls WHERE workspace_id=:ws AND lead_id=:lead AND status='DIALING'"
+            + " AND (data->>'externalId'=:external OR idempotency_key=:external)",
+        Map.of("ws", ws, "lead", call.leadId(), "external", call.voiceSessionId()));
+    for (var row : rows) {
+      int attempts = ((Number) row.get("attempts")).intValue() + 1;
+      db.update(attempts >= 3
+              ? "UPDATE scheduled_calls SET status='FAILED', attempts=:attempts, updated_at=now() WHERE id=:id"
+              : "UPDATE scheduled_calls SET status='SCHEDULED', attempts=:attempts, due_at=now() + interval '2 hours',"
+                  + " updated_at=now(), data=data||'{\"retryReason\":\"NO_ANSWER\"}' WHERE id=:id",
+          Map.of("attempts", attempts, "id", ((Number) row.get("id")).longValue()));
+    }
+    activity(ws, call.leadId(), "CALL_UNANSWERED", "Outbound call not answered", null);
   }
 
   private String visitOutcome(Long ws, Requests.CallIngest call, Long actor) {
@@ -94,9 +118,12 @@ public class CallOutcomeService {
 
   private String callback(Long ws, Requests.CallIngest call, Long actor) {
     Instant due = call.callbackAt();
+    // The agent usually created this callback live, during the call (POST /voice/callbacks); the
+    // record then names the same time, and must not add a second one.
     var existing = db.queryForList(
-        "SELECT id FROM callbacks WHERE workspace_id=:ws AND lead_id=:lead AND data->>'callId'=:call",
-        Map.of("ws", ws, "lead", call.leadId(), "call", call.callId()), Long.class);
+        "SELECT id FROM callbacks WHERE workspace_id=:ws AND lead_id=:lead AND (data->>'callId'=:call OR"
+            + " (due_at=:due AND status IN ('SCHEDULED','DIALING')))",
+        Map.of("ws", ws, "lead", call.leadId(), "call", call.callId(), "due", Timestamp.from(due)), Long.class);
     if (!existing.isEmpty()) return existing.getFirst().toString();
     Map<String, Object> params = new HashMap<>();
     params.put("ws", ws);

@@ -428,6 +428,37 @@ class VoiceCrmIntegrationTest {
   }
 
   @Test
+  void anUnansweredCallIsRetriedLaterAndLeavesTheLeadAlone() throws Exception {
+    String lead = lead();
+    callback(lead, Instant.now().plusSeconds(600));
+    scheduler.dispatchDue(inDays(2).atTime(11, 0).atZone(IST).toInstant());
+    String external = db.queryForObject("SELECT idempotency_key FROM scheduled_calls WHERE lead_id=?", String.class,
+        Long.valueOf(lead));
+    Map<String, Object> record = record(lead, external + "-noanswer");
+    record.put("voiceSessionId", external);
+    record.put("direction", "outbound");
+    record.put("durationSeconds", 0);
+    record.put("callType", "CALLBACK");
+    record.put("failureReason", "NO_ANSWER");
+    send("POST", "/calls/ingest", record, ws, 200);
+    var row = db.queryForMap("SELECT status, attempts FROM scheduled_calls WHERE lead_id=?", Long.valueOf(lead));
+    assertEquals("SCHEDULED", row.get("status"));
+    assertEquals(1, ((Number) row.get("attempts")).intValue());
+    assertEquals("NEW", send("GET", "/leads/" + lead, null, ws, 200).get("status").asText());
+  }
+
+  @Test
+  void aCallbackCreatedDuringTheCallIsNotDuplicatedByItsRecord() throws Exception {
+    String lead = lead();
+    Instant due = Instant.now().plusSeconds(86400).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+    send("POST", "/voice/callbacks", Map.of("leadId", lead, "dueAt", due.toString(), "reason", "Busy now"), ws, 201);
+    Map<String, Object> record = record(lead, "call-" + UUID.randomUUID());
+    record.put("callbackAt", due.toString());
+    send("POST", "/calls/ingest", record, ws, 200);
+    assertEquals(1, db.queryForObject("SELECT count(*) FROM callbacks WHERE lead_id=?", Long.class, Long.valueOf(lead)));
+  }
+
+  @Test
   void unknownIngestFieldsAreStillRejected() throws Exception {
     Map<String, Object> record = record(lead(), "call-" + UUID.randomUUID());
     record.put("notAField", true);

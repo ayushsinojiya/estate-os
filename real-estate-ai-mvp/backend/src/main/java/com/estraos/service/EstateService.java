@@ -1037,9 +1037,11 @@ public class EstateService {
     // A warm or hot lead is qualified; any other completed call means the lead was contacted.
     // Status only moves forward, so a later call never reopens a qualified or handed-over lead.
     String proposed =
-        "WARM".equals(request.leadTemperature()) || "HOT".equals(request.leadTemperature())
-            ? "QUALIFIED"
-            : "CONTACTED";
+        request.failureReason() != null
+            ? current // nobody was reached: nothing to move forward
+            : "WARM".equals(request.leadTemperature()) || "HOT".equals(request.leadTemperature())
+                ? "QUALIFIED"
+                : "CONTACTED";
     String next =
         Boolean.TRUE.equals(request.doNotCall())
             ? "NOT_INTERESTED"
