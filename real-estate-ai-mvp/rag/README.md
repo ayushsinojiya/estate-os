@@ -1,192 +1,136 @@
-# EstraOS property knowledge ingestion
+# EstraOS knowledge service (RAG)
 
-Implements `../../rag_plans/rag.md` plus `rag_property_type_amendment.md`.
-This service ingests and indexes knowledge; it **does not change the voice agent or
-implement its retrieval/ranking/conversation tools**.
+Ingests a builder's documents (brochures, price sheets, payment plans, FAQs, RERA and legal
+papers, floor plans) and answers retrieval requests from two callers: the voice agent during a live
+call, and the CRM for recommendations and source management. Python 3.12, FastAPI, PostgreSQL with
+pgvector. One image, three roles:
 
-## Flow
-
-CRM Files → authenticated Java proxy → source/version + PostgreSQL queue →
-native extraction / selective OCR → deterministic facts / selective Mistral →
-per-source contributions → field-level canonical state → semantic sections →
-local CPU embeddings → atomic canonical + FTS + vector publication.
-
-The CRM database is unchanged. Map every existing CRM workspace ID to its own
-**new** knowledge database, never to the operational CRM database. Database binding
-is checked by the migration. IDs for existing users/workspaces remain numeric;
-source/version/batch/job identifiers in this separate ingestion API are UUIDs.
-
-All types use the same nullable-field canonical model: apartments, villas, shops,
-showrooms, offices, warehouses, industrial assets, land and future types. Common
-type/subtype/location/price/area/availability fields are standardized. Explicit
-type-specific facts remain in `rag_entities.canonical` JSONB and shared search
-sections; BHK/bedrooms/bathrooms/balconies are never required or invented.
-
-## Run with Docker
-
-1. Run PostgreSQL with pgvector on the host and create a separate knowledge database.
-   Copy `.env.example` to `.env`. Set a random service token (at least 24 characters)
-   and the **actual existing CRM workspace ID** in `RAG_DATABASES_JSON`. URL-encode
-   DSN passwords. Containers reach the host at `host.docker.internal`; use
-   `localhost` for a native worker/API.
-2. Run from this directory:
-
-   ```powershell
-   docker compose up --build -d
-   docker compose logs -f worker
-   ```
-
-3. Set `RAG_INGESTION_URL=http://localhost:8090` and the same
-   `RAG_INGESTION_TOKEN` in the CRM backend environment, then restart the backend.
-   A containerized CRM uses `http://api:8090` on a shared network instead.
-4. Files → Knowledge sources → Upload files. Selecting files uploads one batch;
-   every file gets its own outcome and publication transaction. Legacy stored
-   files stay available in a separate tab and are not silently migrated.
-
-Default Compose exposes only the API on `127.0.0.1:8090`; it does not create or
-expose a database container. Change the mapping if Windows reserves the port.
-Source files are bind-mounted from `./storage`; a Docker volume retains the model
-cache. Do not use `down -v` to restart.
-Initial model download requires internet; warm execution uses local CPU weights.
-Do not point the database volume or DSN at the existing CRM data directory.
-
-For more clients, provision another database on the local PostgreSQL server and append its DSN to
-the JSON map. Each database is bound to exactly one CRM workspace. Re-run
-`estraos-rag migrate` after adding a store. Migrations are idempotent; running
-them twice does not reset source data. Keep application connections off while
-upgrading a deployed schema.
-
-## Native Python development
-
-Python 3.12 recommended. PostgreSQL must have the real `vector` extension installed.
-
-```powershell
-uv venv .venv
-uv pip install --python .venv/Scripts/python.exe torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
-uv pip install --python .venv/Scripts/python.exe -c constraints.txt -e '.[test]'
-.venv/Scripts/estraos-rag.exe migrate
-.venv/Scripts/estraos-rag.exe api
-# Separate terminal, same .env and storage path:
-.venv/Scripts/estraos-rag.exe worker
+```bash
+python -m rag_service migrate   # forward-only schema migrations
+python -m rag_service api       # HTTP API on :8090
+python -m rag_service worker    # ingestion worker (run as many as you like)
 ```
 
-The CLI loads the current directory's `.env` without overriding existing variables.
-Use native-host DSNs (not the Compose hostname). The API and worker must share the
-same storage path and DSN map. Only the worker parses and embeds; API requests queue
-durable work. `worker --once` processes at most one queued operation per store.
-Local scanned-PDF OCR needs Tesseract plus eng/hin/mar/guj language packs; Docker
-installs them. `RAG_OCR_LANGUAGES` defaults to `eng` for native installations.
+## What it does
 
-## Models and extraction
-
-The measured embedding selection is `intfloat/multilingual-e5-small`, immutable
-revision `614241f622f53c4eeff9890bdc4f31cfecc418b3`, 384 dimensions. See
-[benchmark report](benchmarks/REPORT.md) for actual results and limitations.
-No paid embedding API or fake/hash fallback is used. Exact vector search is the
-baseline at approximately 1,000 properties; no ANN index is introduced.
-
-CSV/XLS/XLSX and clearly labeled text use deterministic extraction. Native PDF and
-DOCX text are retained with locators; scanned PDF pages and embedded PDF/DOCX
-image parts use local OCR. Embedded-image text keeps its own page/block/image
-locator; images with no readable text produce a warning, not inferred visual facts.
-Documents requiring
-narrative/layout interpretation need `MISTRAL_API_KEY` and an explicit
-`MISTRAL_EXTRACTION_MODEL`. Missing configuration fails that job clearly while
-leaving live knowledge intact. No external calls occur for deterministic inputs.
-Mistral receives extracted document text when needed; do not configure it for
-documents that must never leave the machine. No crawler, document-link following,
-image persistence, macro execution or formula evaluation is implemented.
-
-PDF, DOCX, XLS/XLSX, CSV, TXT and Markdown are accepted. DOC and ZIP are rejected
-as knowledge sources; existing opaque ZIP files remain in legacy storage. Maximum
-50 MB/file, 20 files/batch, 200 MB combined batch. Encrypted files are permanent
-rejections: upload an unencrypted replacement, not Retry.
-
-## Publication and recovery
-
-- SHA-256 duplicate detection includes active/queued/processing versions, not only
-  filenames. One pending operation per stable source; one logical job per database
-  is serialized by a session advisory lock, including across worker processes.
-- Failed jobs are not automatically retried. Files UI Retry reuses the stored file.
-  Interrupted PROCESSING work becomes FAILED when a new worker obtains the lock.
-- Successful newer sources win only conflicting fields. Non-conflicting old facts
-  remain, with per-fact provenance. Strong explicit identity matches may merge;
-  name/BHK/area alone never cross-source merge uncertain listings.
-- Replace keeps the old version live through parsing, reconciliation and embedding.
-  One transaction switches canonical, FTS and vector state only after all succeed.
-- Delete first reconstructs remaining contributions and embeds affected sections,
-  then publishes atomically. Physical files/raw extraction are cleaned afterward.
-  Filesystem cleanup failures stay in `rag_file_cleanup` for separate cleanup retry;
-  they do not roll back or rerun ingestion. Audit/version metadata is retained.
-- Ambiguous newer numeric values clear stale typed filters, retain their original
-  wording/provenance in canonical unresolved facts, and become source-qualification
-  search sections. Explicit price ranges produce both min/max bounds.
-
-Changing embedding model/dimension requires full re-embedding, never mixed models:
-
-```powershell
-.venv/Scripts/estraos-rag.exe reembed --workspace 1 --actor 7 --model intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3
+```
+upload ─► UPLOADED ─► PARSING ─► EMBEDDING ─► PUBLISHED      (FAILED, UNPUBLISHED, SUPERSEDED, DELETED)
+            │            │           │
+            │            │           └─ OpenAI embeddings in batches of 256, model recorded per chunk
+            │            └─ vision model per page (PDF/PPTX/images); pandas/openpyxl for sheets;
+            │               python-docx for Word; classify doc type + language; structure-aware chunks
+            └─ SHA-256 duplicate check per workspace; bytes stored on RAG_STORAGE_PATH
 ```
 
-Use an existing CRM actor ID. A failed re-embedding leaves the previous set live;
-rerun the command manually to retry. After success, update worker model configuration
-to match before restarting it. The read view `rag_live_knowledge` exposes only the
-active embedding set and its complete model identity. Voice queries must use the
-same pinned provider with `embed_queries` (`query: ` prefix), while documents use
-`passage: `. Read-side exact filters and FTS are available; voice integration remains
-a separate task by specification.
+- **Storage.** One knowledge database (separate from the CRM's) with `workspace_id` on every row:
+  `kb_documents` (one row per version; `source_id` is the stable identity), `kb_pages` (parsed
+  Markdown per page with provider, confidence and page-image hash), `kb_chunks` (content, context
+  header, `vector(N)` embedding, `simple` tsvector, status), `kb_jobs` (durable queue claimed with
+  `FOR UPDATE SKIP LOCKED`, exponential backoff). Indexes: HNSW (cosine) on the embedding, GIN on the
+  tsvector, B-tree on `(workspace_id, project_id, status)`, `pg_trgm` on titles and context headers.
+  Text search uses the `simple` configuration: Postgres has no stemmers for Hindi, Marathi or
+  Gujarati, and pretending otherwise would mangle them.
+- **Parsing.** PDF pages and images are rendered and transcribed to faithful Markdown by a vision
+  model (`PARSER_PROVIDER=openai` with `gpt-4o-mini`, or `mistral` OCR), a few pages at a time with
+  retries. The prompt keeps Devanagari and Gujarati in their script and asks for a self-reported
+  confidence. A page that still fails falls back to the PDF's own text layer and is flagged.
+  Spreadsheets and CSVs never go to a model; each sheet becomes a table. Slides are read with
+  python-pptx (LibreOffice is not in the image; see DECISIONS.md).
+- **Chunking** follows structure: headings split sections, small neighbouring sections are packed
+  (≈250–450 tokens), long sections split with ≈15% overlap inside themselves only. Tables are never
+  cut through a row and always repeat their header; tables with more than six rows also get one
+  `TABLE_ROW` chunk per row (`Charge: Floor rise; Amount: ₹40 per sq ft per floor`). Every FAQ
+  question with its answer is exactly one chunk. Each chunk is embedded together with a context
+  header: `Project: Sahyadri Grove (Baner, Pune) · Brochure · Section: Amenities > Clubhouse · Page 4`.
+- **Publishing** is automatic once every chunk is embedded. A new version (replace or reindex)
+  goes live in one transaction that also removes the old version's chunks, so retrieval sees the
+  old version or the new one, never both and never neither. Unpublish and delete take chunks out of
+  retrieval in the same transaction. Pages parsed with low confidence are published but listed in
+  `lowConfidencePages` and `warnings` so the UI can badge them.
+- **Retrieval** embeds the query (LRU-cached), runs vector top-30, keyword (`ts_rank_cd`) top-30
+  and a trigram name match in parallel from one shared database snapshot, fuses them with
+  Reciprocal Rank Fusion (k=60), and reranks the top 20 when it fits the budget
+  (`RERANKER=bge|cohere|none`; local `BAAI/bge-reranker-v2-m3` by default). Reranking predicts its
+  own latency from what it has measured and is skipped, with a log line, when the prediction exceeds
+  `RERANK_BUDGET_MS` (150).
+- **Live inventory is never embedded.** Unit prices, availability and BHK counts come only from the
+  CRM. Price-sheet chunks are for structure (payment stages, floor rise, PLC, parking, maintenance,
+  GST). Every retrieval response carries `"inventoryAuthoritative": "crm"`.
 
-## Verification
+## API
 
-```powershell
-# Existing dedicated/disposable pgvector test DB; never use the CRM DB.
-$env:RAG_TEST_DATABASE_URL='postgresql://test_user:test_password@127.0.0.1:15433/rag_verify?connect_timeout=5'
-.venv/Scripts/python.exe -m pytest tests -q
+| Endpoint | Caller | Purpose |
+| --- | --- | --- |
+| `POST /v1/voice/retrieve` | voice agent (`RAG_VOICE_TOKEN`, one workspace) or CRM | Hot path. `{workspaceId, projectId?, query, docTypes?, language?, k=4}` → chunks with `documentId`, `title`, `docType`, `page`, `sectionPath`, `score`, short query-focused `content`. No answer generation. |
+| `POST /v1/knowledge/search` | CRM | `RestRagServiceClient` contract: `{results:[{workspaceId,projectId,documentId,status:"PUBLISHED",language,text,pageReference,score}]}`, honouring `publishedDocumentIds`. Rewrites Hinglish/Marathi/Gujarati to an English query plus two paraphrases first. |
+| `POST /v1/workspaces/{ws}/sources` (alias `/batches`) | CRM | Multipart upload (`files`, optional `projectId`, `projectName`, `locality`, `crmDocumentId`, `crmFileId`, `title`, `docType`, `language`). 202 with per-file `UPLOADED`/`DUPLICATE`/`REJECTED`. |
+| `GET /v1/workspaces/{ws}/sources`, `GET …/sources/{id}` | CRM | List (`{items,total,page,size}`) and detail (versions, pages, low-confidence pages, cost). |
+| `POST …/sources/{id}/replace`, `/retry`, `/unpublish`, `/publish`; `DELETE …/sources/{id}` | CRM | Version, retry a failed ingest, withdraw, restore, delete. |
+| `POST /v1/content/index`, `/v1/documents/reindex`, `/v1/documents/status`, `/v1/content/unpublish` | CRM | The CRM's document contract, keyed by its own `documentId`. |
+| `GET /healthz` | anyone | Database, provider mode, embedding model, parser, reranker, queue depth. |
 
-$env:RAG_BENCHMARK_DATABASE_URL=$env:RAG_TEST_DATABASE_URL
-.venv/Scripts/python.exe benchmarks/benchmark_embeddings.py --model e5
-.venv/Scripts/python.exe benchmarks/benchmark_embeddings.py --model minilm
+**CRM status: the CRM polls.** It calls `/v1/documents/status` from the document's
+processing-status endpoint and from a scheduled sync, and flips `property_documents.status` to
+`PUBLISHED` when this service reports it. Polling keeps the knowledge service free of any
+credential for the CRM; the cost is a delay of at most one sync interval.
+
+## Configuration
+
+See `.env.example`. The important ones: `RAG_DATABASE_URL`, `RAG_SERVICE_TOKEN`, `RAG_VOICE_TOKEN`
++ `RAG_VOICE_WORKSPACE_ID`, `OPENAI_API_KEY`, `PARSER_PROVIDER`, `EMBEDDING_MODEL`/`EMBEDDING_DIM`,
+`RERANKER`, `REWRITE_ON_VOICE` (default false: the voice LLM writes English keyword queries itself).
+
+`EMBEDDING_DIM` above 2000 stores `halfvec` (HNSW's limit for `vector` is 2000). With
+`text-embedding-3-large` either keep 1536/1024 (the service requests that many dimensions) or set
+3072 and get `halfvec`. The index remembers the model and dimension it was built with and the
+service refuses to start against a different one, because mixing models silently ruins similarity.
+
+Create the database once (the extensions need a superuser):
+
+```sql
+CREATE DATABASE estraos_knowledge;
+\c estraos_knowledge
+CREATE EXTENSION vector;
+CREATE EXTENSION pg_trgm;
 ```
 
-Lifecycle tests create/drop uniquely named private schemas, not databases. Without
-the test DSN they are explicitly skipped; passing only unit tests is not database
-verification. Embedding failure tests inject a test-only provider; the benchmark
-uses actual downloaded models. Benchmark corpus and `examples/mixed-property-types.csv`
-are **synthetic fixtures, not real listings**.
+`PROVIDER_MODE=fake` runs entirely offline: a deterministic hashing embedder (lexical, not
+semantic), the PDF text layer instead of vision, an overlap reranker, no query rewriting.
 
-For the CRM checks, run `npm test`, `npm run build`, and `npm run lint` in
-`../frontend`. Run `mvn -Dspring.flyway.enabled=true test` in `../backend`:
-its disposable Testcontainers database needs migrations enabled, while the existing
-application configuration intentionally leaves Flyway disabled. Do not enable
-migrations against an existing operational database just to run these tests.
+## Tests
 
-To exercise the real OCR tests and database lifecycle from the built Docker image:
-
-```powershell
-docker build -t estraos-rag:local .
-docker run --rm --entrypoint python `
-  -e RAG_TEST_DATABASE_URL='postgresql://test_user:test_password@host.docker.internal:15433/rag_verify?connect_timeout=5' `
-  --mount "type=bind,source=$($PWD.Path)/tests,target=/app/tests,readonly" `
-  --mount "type=bind,source=$($PWD.Path)/examples,target=/app/examples,readonly" `
-  estraos-rag:local -m pytest tests -q -p no:cacheprovider
+```bash
+python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest          # needs Docker: Testcontainers starts pgvector/pgvector:pg17
 ```
 
-Real OCR tests explicitly skip on native systems without Tesseract; Docker includes
-it. Tests use isolated schemas and synthetic content, not existing client documents.
-See [implementation ledger](IMPLEMENTATION.md) for the recorded verification and
-the distinction between tested implementation and production configuration.
+Covered: workspace isolation at every layer, unpublished/deleted/in-progress documents never
+returned, tables never split, XLSX row chunks, duplicate SHA, atomic version swap under concurrent
+reads, voice-token workspace binding, the CRM document contract and allowlist, SKIP LOCKED claiming,
+retry/backoff, RRF fusion, the rerank skip-on-budget and timeout paths, and `/v1/voice/retrieve`
+latency with mocked providers.
 
-## Known limits
+## Measured results
 
-- Lexical evidence and conservative negation checks reduce unsupported extraction,
-  but do not prove arbitrary semantic entailment. OCR and LLM extraction can still
-  misread a document; evaluate representative client documents before production.
-- No automatic translations/aliases or broad inferred property traits are generated.
-- Interpretation currently rejects documents beyond its 240,000-character input
-  budget rather than silently truncating them. Embedding sections exceeding the
-  pinned model's token limit fail publication rather than lose facts silently.
-- The multilingual benchmark is a small synthetic diagnostic, not a production
-  accuracy guarantee. The property-type amendment has parser/index regression
-  coverage; it does not imply measured multilingual retrieval quality for every type.
-- Development dependency deprecation warnings from Starlette/httpx remain visible
-  in tests. No production secrets or storage paths are returned in source history.
+**Latency** (`tests/test_latency.py`, 470 published chunks, embedding call simulated at 120 ms and
+rerank at 60 ms, 60 sequential requests, Testcontainers Postgres on a laptop): **p50 196 ms,
+p95 198 ms** server-side. Database search plus fusion is ≈18 ms of that; the target is p95 < 450 ms.
+
+**Retrieval eval** (`python -m evals.run_eval`; 30 questions, 10 en / 7 hi / 7 mr / 6 gu, over a
+synthetic brochure, XLSX price sheet and FAQ for a fictional project). Run offline
+(`PROVIDER_MODE=fake`: hashing embedder, no reranker, no rewrite model) because no OpenAI key was
+available on the build machine:
+
+| Path | recall@4 | MRR |
+| --- | --- | --- |
+| voice (`/v1/voice/retrieve`, English keyword query as the voice LLM writes it) | **0.967** | **0.928** |
+| CRM (`/v1/knowledge/search`, the caller's own words, no rewrite offline) | 0.600 | 0.542 |
+
+Per language, voice: en 1.000 / 0.883, hi 0.857 / 0.857, mr 1.000 / 1.000, gu 1.000 / 1.000.
+CRM: en 1.000 / 0.950, hi 0.571 / 0.464, mr 0.429 / 0.357, gu 0.167 / 0.167.
+
+How to read this: the offline embedder only matches shared words, so a Marathi or Gujarati question
+cannot match English text without the rewrite step, which needs a model. That is what the CRM-path
+numbers show, not a property of the pipeline. Re-run with `OPENAI_API_KEY` set (live embeddings,
+`gpt-4o-mini` rewriting, bge reranker) before relying on the multilingual numbers; results are
+written to `evals/results/latest.json`.

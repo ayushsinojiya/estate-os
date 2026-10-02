@@ -84,7 +84,7 @@ class RagIngestionServiceTest {
     ingestion = new RagIngestionService(tenant, client, " ");
     var error = assertThrows(ApiException.class, () -> ingestion.details(7L, ID));
     assertEquals(503, error.status);
-    assertTrue(error.getMessage().contains("RAG_INGESTION_TOKEN"));
+    assertTrue(error.getMessage().contains("RAG_SERVICE_TOKEN"));
     server.verify();
   }
 

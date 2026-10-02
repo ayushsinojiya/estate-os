@@ -34,10 +34,36 @@ final class ProviderHttpClient {
     }
 
     Map<String, Object> post(String path, Map<String, Object> payload) {
-        try {
+        return call(() -> {
             RestClient.RequestBodySpec request = client.post().uri(path).contentType(MediaType.APPLICATION_JSON);
             if (payload.get("requestId") != null) request.header("Idempotency-Key", safeRequestId(payload.get("requestId")));
-            Map<String, Object> result = request.body(payload).retrieve()
+            return request.body(payload).retrieve();
+        });
+    }
+
+    Map<String, Object> get(String path) {
+        return call(() -> client.get().uri(path).retrieve());
+    }
+
+    Map<String, Object> delete(String path) {
+        return call(() -> client.delete().uri(path).retrieve());
+    }
+
+    /** One file plus plain form fields, as multipart/form-data. */
+    Map<String, Object> multipart(String path, Map<String, String> fields, String filename, String contentType,
+                                  byte[] content) {
+        var parts = new org.springframework.util.LinkedMultiValueMap<String, Object>();
+        fields.forEach((key, value) -> { if (value != null) parts.add(key, value); });
+        var headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(contentType));
+        headers.setContentDispositionFormData("files", filename);
+        parts.add("files", new org.springframework.http.HttpEntity<>(content, headers));
+        return call(() -> client.post().uri(path).contentType(MediaType.MULTIPART_FORM_DATA).body(parts).retrieve());
+    }
+
+    private Map<String, Object> call(java.util.function.Supplier<RestClient.ResponseSpec> send) {
+        try {
+            Map<String, Object> result = send.get()
                 .onStatus(status -> !status.is2xxSuccessful(), (req, response) -> {
                     throw new ExternalServiceException(service, "INTEGRATION_PROVIDER_ERROR", 502, service + " service rejected the request");
                 }).body(MAP);

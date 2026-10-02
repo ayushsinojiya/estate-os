@@ -1,16 +1,17 @@
 FROM python:3.12-slim
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DEFAULT_TIMEOUT=30 PIP_RETRIES=2 HF_HOME=/models
-WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr tesseract-ocr-eng tesseract-ocr-hin tesseract-ocr-mar tesseract-ocr-guj \
-    && rm -rf /var/lib/apt/lists/*
-RUN pip install torch==2.14.0 --index-url https://download.pytorch.org/whl/cpu
-COPY pyproject.toml constraints.txt ./
-COPY rag_ingestion ./rag_ingestion
-RUN pip install -c constraints.txt '.[test]'
-RUN useradd --uid 10001 --create-home ingestion && mkdir -p /data /models \
-    && chown -R ingestion:ingestion /data /models /app
-USER ingestion
+
+WORKDIR /srv
+# INSTALL_RERANKER=false builds a smaller image without torch; set RERANKER=none or cohere then.
+ARG INSTALL_RERANKER=true
+COPY requirements.txt requirements-rerank.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+ && if [ "$INSTALL_RERANKER" = "true" ]; then pip install --no-cache-dir -r requirements-rerank.txt; fi
+
+COPY rag_service rag_service
+
+RUN useradd --system --uid 10001 rag && mkdir -p /data/sources /models && chown -R rag /data /models
+USER rag
+ENV PYTHONUNBUFFERED=1 RAG_STORAGE_PATH=/data/sources HF_HOME=/models
 EXPOSE 8090
-ENTRYPOINT ["estraos-rag"]
-CMD ["api", "--host", "0.0.0.0"]
+ENTRYPOINT ["python", "-m", "rag_service"]
+CMD ["api"]

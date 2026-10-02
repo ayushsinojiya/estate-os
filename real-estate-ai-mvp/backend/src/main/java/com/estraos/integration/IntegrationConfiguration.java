@@ -21,8 +21,10 @@ public class IntegrationConfiguration {
             throw new IllegalStateException("Mock integrations cannot run with a production Spring profile");
     }
 
+    /** The knowledge service is used for real whenever its URL is configured, even in mock mode. */
     @Bean public RagServiceClient ragServiceClient() {
-        return mock ? new MockRagServiceClient() : new RestRagServiceClient(http("rag"));
+        boolean configured = !environment.getProperty("app.integrations.rag.url", "").isBlank();
+        return mock && !configured ? new MockRagServiceClient() : new RestRagServiceClient(http("rag"));
     }
     @Bean public VoiceAgentServiceClient voiceAgentServiceClient() {
         return mock ? new MockVoiceAgentServiceClient() : new RestVoiceAgentServiceClient(http("voice"));

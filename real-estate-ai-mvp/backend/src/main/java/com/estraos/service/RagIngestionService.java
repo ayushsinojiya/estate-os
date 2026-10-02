@@ -19,7 +19,11 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
-/** Authenticated CRM boundary; the Python service owns source storage and ingestion state. */
+/**
+ * Authenticated proxy to the knowledge service's source management (/api/v1/knowledge/*). The
+ * Python service owns source storage and ingestion state; this API checks workspace membership and
+ * role first, then forwards with the shared RAG_SERVICE_TOKEN.
+ */
 @Service
 public class RagIngestionService {
   private final TenantContext tenant;
@@ -29,11 +33,12 @@ public class RagIngestionService {
   @Autowired
   public RagIngestionService(
       TenantContext tenant,
-      @Value("${app.ingestion.url:http://localhost:8090}") String url,
-      @Value("${app.ingestion.token:}") String token,
-      @Value("${app.ingestion.connect-timeout-ms:3000}") int connectTimeout,
-      @Value("${app.ingestion.read-timeout-ms:60000}") int readTimeout) {
-    this(tenant, buildClient(url, connectTimeout, readTimeout), token);
+      @Value("${app.integrations.rag.url:}") String url,
+      @Value("${app.integrations.rag.api-key:}") String token,
+      @Value("${app.integrations.connect-timeout-ms:3000}") int connectTimeout,
+      @Value("${app.knowledge.upload-timeout-ms:60000}") int readTimeout) {
+    this(tenant, buildClient(url.isBlank() ? "http://localhost:8090" : url, connectTimeout, readTimeout),
+        url.isBlank() ? "" : token);
   }
 
   RagIngestionService(TenantContext tenant, RestClient client, String token) {
@@ -88,6 +93,11 @@ public class RagIngestionService {
     return request(HttpMethod.DELETE, source(workspace, id), null);
   }
 
+  public JsonNode publish(Long workspace, String id, boolean publish) {
+    tenant.manage(workspace);
+    return request(HttpMethod.POST, source(workspace, id) + (publish ? "/publish" : "/unpublish"), null);
+  }
+
   private String root(Long workspace) {
     return "/v1/workspaces/" + workspace;
   }
@@ -113,7 +123,7 @@ public class RagIngestionService {
   private JsonNode request(HttpMethod method, String path, Object body) {
     if (token == null || token.isBlank())
       throw new ApiException(503, "INGESTION_NOT_CONFIGURED",
-          "Knowledge ingestion is not configured. Set RAG_INGESTION_TOKEN on the CRM and ingestion services.");
+          "Knowledge ingestion is not configured. Set RAG_SERVICE_URL and RAG_SERVICE_TOKEN on the CRM and the same RAG_SERVICE_TOKEN on the knowledge service.");
     try {
       // URI builder input is already encoded; expand through a URI to avoid double encoding.
       var request = client.method(method).uri(builder -> builder.build().resolve(path)).headers(headers -> {

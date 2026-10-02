@@ -50,6 +50,30 @@ final class IntegrationPayloads {
         } catch (IllegalArgumentException ex) { throw new IllegalArgumentException(key + " must be a positive 64-bit integer"); }
     }
 
+    /** Upload metadata: workspace plus optional, validated identity fields. Values are strings. */
+    static Map<String, String> uploadFields(Map<String, Object> request) {
+        Map<String, Object> context = context(request, false);
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (String key : List.of("projectId", "crmDocumentId", "crmFileId")) {
+            if (request.get(key) != null) fields.put(key, id(request, key));
+        }
+        for (String key : List.of("projectName", "locality", "title", "docType")) {
+            Object value = request.get(key);
+            if (value != null && !value.toString().isBlank()) fields.put(key, value.toString().strip());
+        }
+        if (request.get("language") != null) fields.put("language", context.get("language").toString());
+        return fields;
+    }
+
+    static String sourceId(Map<String, Object> request) {
+        String value = required(request, "sourceId");
+        try {
+            return java.util.UUID.fromString(value).toString();
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("sourceId must be a UUID");
+        }
+    }
+
     static Map<String, Object> publishedSearch(Map<String, Object> request) {
         Map<String, Object> result = context(request, false);
         result.put("publishedOnly", true);

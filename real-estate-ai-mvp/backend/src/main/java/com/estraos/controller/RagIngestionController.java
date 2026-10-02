@@ -56,6 +56,18 @@ public class RagIngestionController {
     return ingestion.retry(workspace, id);
   }
 
+  @PostMapping("/sources/{id}/publish")
+  public JsonNode publish(@RequestHeader("X-Workspace-Id") @Positive Long workspace,
+      @PathVariable String id) {
+    return ingestion.publish(workspace, id, true);
+  }
+
+  @PostMapping("/sources/{id}/unpublish")
+  public JsonNode unpublish(@RequestHeader("X-Workspace-Id") @Positive Long workspace,
+      @PathVariable String id) {
+    return ingestion.publish(workspace, id, false);
+  }
+
   @DeleteMapping("/sources/{id}")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public JsonNode delete(@RequestHeader("X-Workspace-Id") @Positive Long workspace,

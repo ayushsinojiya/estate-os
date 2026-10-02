@@ -37,7 +37,7 @@ app:
   demo-password: ${DEMO_PASSWORD:}
   default-country-code: ${DEFAULT_COUNTRY_CODE:91}
   documents:
-    max-file-bytes: ${DOCUMENT_MAX_FILE_BYTES:20971520}
+    max-file-bytes: ${DOCUMENT_MAX_FILE_BYTES:52428800}
   files:
     storage-path: ${FILE_STORAGE_PATH:./storage/files}
   service-account:
@@ -60,6 +60,9 @@ app:
     notification:
       url: ${NOTIFICATION_SERVICE_URL:}
       api-key: ${NOTIFICATION_API_KEY:}
+  knowledge:
+    sync-enabled: ${KNOWLEDGE_SYNC_ENABLED:true}
+    sync-poll-ms: ${KNOWLEDGE_SYNC_POLL_MS:30000}
   notifications:
     reminders-enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}
     reminder-poll-ms: ${NOTIFICATION_REMINDER_POLL_MS:60000}

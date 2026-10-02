@@ -23,6 +23,7 @@ public class EstateService {
   private final RagServiceClient rag;
   private final VoiceAgentServiceClient voice;
   private final NotificationServiceClient notification;
+  private final KnowledgeService knowledge;
   private final String countryCode;
   private static final Set<String> MANAGED =
       Set.of(
@@ -42,6 +43,7 @@ public class EstateService {
       RagServiceClient rag,
       VoiceAgentServiceClient voice,
       NotificationServiceClient notification,
+      KnowledgeService knowledge,
       @org.springframework.beans.factory.annotation.Value("${app.default-country-code:91}")
           String countryCode) {
     this.repo = repo;
@@ -51,6 +53,7 @@ public class EstateService {
     this.rag = rag;
     this.voice = voice;
     this.notification = notification;
+    this.knowledge = knowledge;
     if (!countryCode.matches("[0-9]{1,4}"))
       throw new IllegalStateException("DEFAULT_COUNTRY_CODE must be 1 to 4 digits");
     this.countryCode = countryCode;
@@ -380,8 +383,9 @@ public class EstateService {
   public Map<String, Object> document(Long ws, Requests.Document request) {
     tenant.manage(ws);
     project(ws, request.projectId());
-    if (!request.fileName().toLowerCase(Locale.ROOT).endsWith(".pdf"))
-      throw ApiException.bad("Only PDF document metadata is supported");
+    if (!DocumentFileService.TYPES.containsKey(DocumentFileService.extension(request.fileName())))
+      throw ApiException.bad(
+          "Unsupported file type. Use PDF, Word, PowerPoint, Excel, CSV, text or an image");
     Map<String, Object> data = mapper.map(request);
     data.put("language", language(request.language()));
     data.put("processingStatus", "NOT_INDEXED");
@@ -413,7 +417,7 @@ public class EstateService {
             "storageReference",
             request.storageReference(),
             "contentType",
-            "application/pdf"),
+            DocumentFileService.TYPES.get(DocumentFileService.extension(request.fileName()))),
         fields("project_id", request.projectId()));
     version(ws, uuid, result);
     repo.event(
@@ -512,15 +516,26 @@ public class EstateService {
       } else {
         if (action.equals("reindex") && !data.get("status").equals("PUBLISHED"))
           throw ApiException.bad("Only published content can be reindexed");
-        if (string(data, "content", "").isBlank())
-          throw ApiException.bad("Add content before publishing");
+        boolean hasFile = knowledge.hasFile(ws, doc);
+        if (!hasFile && string(data, "content", "").isBlank())
+          throw ApiException.bad("Add content or upload a file before publishing");
         data.put("status", "PUBLISHED");
         var payload = docPayload(ws, data);
         payload.put("publishedOnly", true);
-        result =
-            action.equals("publish")
-                ? rag.indexPublishedContent(payload)
-                : rag.reindexDocument(payload);
+        // An uploaded file is the source of truth for its document: the knowledge service
+        // re-indexes the stored file rather than the editable text.
+        if (hasFile) payload.remove("content");
+        if (hasFile && data.get("ragSourceId") == null) {
+          repo.save("property_documents", ws, doc, data, fields("status", "PUBLISHED"));
+          var sent = knowledge.sendDocumentFile(ws, doc, tenant.user());
+          data = new LinkedHashMap<>(sent);
+          result = fields("status", sent.get("processingStatus"), "mock", sent.get("mock"));
+        } else {
+          result =
+              action.equals("publish")
+                  ? rag.indexPublishedContent(payload)
+                  : rag.reindexDocument(payload);
+        }
         data.put("processingStatus", result.getOrDefault("status", "QUEUED"));
       }
       data.put("mock", result.getOrDefault("mock", false));
@@ -539,20 +554,33 @@ public class EstateService {
     }
   }
 
+  /**
+   * The document's indexing state, refreshed from the knowledge service and stored, so the list
+   * and detail views show the same state the knowledge service reports.
+   */
   @Transactional(noRollbackFor = ExternalServiceException.class)
   public Map<String, Object> processing(Long ws, Long doc) {
     tenant.require(ws);
     var data = repo.get("property_documents", ws, doc);
-    if (!data.get("status").equals("PUBLISHED"))
+    Object processing = data.get("processingStatus");
+    boolean tracked =
+        data.get("status").equals("PUBLISHED")
+            || data.get("ragSourceId") != null
+            || (processing != null && KnowledgeService.IN_FLIGHT.contains(processing.toString()));
+    if (!tracked)
       return fields(
           "status",
-          data.get("processingStatus"),
+          processing,
           "documentId",
-          doc,
+          doc.toString(),
+          "documentStatus",
+          data.get("status"),
           "mock",
           data.getOrDefault("mock", false));
     try {
-      return rag.getProcessingStatus(docPayload(ws, data));
+      Map<String, Object> result = new LinkedHashMap<>(knowledge.syncDocument(ws, doc));
+      result.put("documentStatus", repo.get("property_documents", ws, doc).get("status"));
+      return result;
     } catch (ExternalServiceException e) {
       event(ws, "EXTERNAL_SERVICE_FAILED", "DOCUMENT", doc);
       throw e;

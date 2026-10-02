@@ -15,7 +15,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Workspace-isolated filesystem storage with retained, auditable history. */
+/**
+ * Workspace-isolated filesystem storage with retained, auditable history. Files in a format the
+ * knowledge service understands are also sent there as workspace-wide knowledge.
+ */
 @Service
 public class ManagedFileService {
   static final long MAX_BYTES = 50L * 1024 * 1024;
@@ -26,11 +29,13 @@ public class ManagedFileService {
   private final TenantRepository repo;
   private final TenantContext tenant;
   private final AuditService audit;
+  private final KnowledgeService knowledge;
   private final Path root;
 
   public ManagedFileService(NamedParameterJdbcTemplate db, TenantRepository repo, TenantContext tenant,
-      AuditService audit, @Value("${app.files.storage-path:./storage/files}") String storagePath) {
-    this.db = db; this.repo = repo; this.tenant = tenant; this.audit = audit;
+      AuditService audit, KnowledgeService knowledge,
+      @Value("${app.files.storage-path:./storage/files}") String storagePath) {
+    this.db = db; this.repo = repo; this.tenant = tenant; this.audit = audit; this.knowledge = knowledge;
     this.root = Paths.get(storagePath).toAbsolutePath().normalize();
   }
 
@@ -105,6 +110,9 @@ public class ManagedFileService {
       db.update("UPDATE managed_files SET stored_file_name=:stored, storage_key=:key, status='STORED', updated_at=now() WHERE workspace_id=:ws AND id=:id",
           Map.of("stored", storedName, "key", key, "ws", ws, "id", id));
       audit.record(ws, tenant.user(), "FILE_UPLOADED", "MANAGED_FILE", id);
+      String ext = extension(name);
+      if (DocumentFileService.TYPES.containsKey(ext) && DocumentFileService.matches(ext, bytes))
+        knowledge.sendManagedFile(ws, id, name, DocumentFileService.TYPES.get(ext), bytes, tenant.user());
       return result(name, "STORED", null, id);
     } catch (Exception e) {
       try { Files.deleteIfExists(destination); } catch (IOException ignored) { }
@@ -124,15 +132,15 @@ public class ManagedFileService {
     if (status != null && !status.isBlank()) params.put("status", status);
     if (search != null && !search.isBlank()) params.put("search", "%" + search.replace("%", "\\%").replace("_", "\\_") + "%" );
     long total = db.queryForObject("SELECT count(*) FROM managed_files WHERE " + where, params, Long.class);
-    List<Map<String, Object>> items = db.query("SELECT id,original_file_name,file_extension,mime_type,file_size_bytes,sha256_checksum,status,failure_reason,created_at,updated_at,deleted_at,created_by FROM managed_files WHERE " + where + " ORDER BY created_at DESC LIMIT :limit OFFSET :offset", params,
-        (rs, n) -> { Map<String,Object> row = new LinkedHashMap<>(); row.put("id", Long.toString(rs.getLong("id"))); row.put("originalFileName", rs.getString("original_file_name")); row.put("fileExtension", rs.getString("file_extension")); row.put("mimeType", rs.getString("mime_type")); row.put("fileSizeBytes", rs.getLong("file_size_bytes")); row.put("sha256Checksum", rs.getString("sha256_checksum")); row.put("status", rs.getString("status")); row.put("failureReason", rs.getString("failure_reason")); row.put("createdAt", rs.getTimestamp("created_at").toInstant().toString()); Timestamp deleted = rs.getTimestamp("deleted_at"); row.put("deletedAt", deleted == null ? null : deleted.toInstant().toString()); return row; });
+    List<Map<String, Object>> items = db.query("SELECT id,original_file_name,file_extension,mime_type,file_size_bytes,sha256_checksum,status,failure_reason,created_at,updated_at,deleted_at,created_by,knowledge_source_id,knowledge_status,knowledge_error FROM managed_files WHERE " + where + " ORDER BY created_at DESC LIMIT :limit OFFSET :offset", params,
+        (rs, n) -> { Map<String,Object> row = new LinkedHashMap<>(); row.put("id", Long.toString(rs.getLong("id"))); row.put("originalFileName", rs.getString("original_file_name")); row.put("fileExtension", rs.getString("file_extension")); row.put("mimeType", rs.getString("mime_type")); row.put("fileSizeBytes", rs.getLong("file_size_bytes")); row.put("sha256Checksum", rs.getString("sha256_checksum")); row.put("status", rs.getString("status")); row.put("failureReason", rs.getString("failure_reason")); row.put("createdAt", rs.getTimestamp("created_at").toInstant().toString()); Timestamp deleted = rs.getTimestamp("deleted_at"); row.put("deletedAt", deleted == null ? null : deleted.toInstant().toString()); row.put("knowledgeSourceId", rs.getString("knowledge_source_id")); row.put("knowledgeStatus", rs.getString("knowledge_status")); row.put("knowledgeError", rs.getString("knowledge_error")); return row; });
     return Map.of("items", items, "total", total, "page", safePage, "size", safeSize);
   }
 
   @Transactional
   public void delete(Long ws, Long id) {
     tenant.manage(ws);
-    var records = db.query("SELECT storage_key,status FROM managed_files WHERE workspace_id=:ws AND id=:id", Map.of("ws", ws, "id", id), (rs,n) -> Map.of("key", Optional.ofNullable(rs.getString("storage_key")).orElse(""), "status", rs.getString("status")));
+    var records = db.query("SELECT storage_key,status,knowledge_source_id FROM managed_files WHERE workspace_id=:ws AND id=:id", Map.of("ws", ws, "id", id), (rs,n) -> Map.of("key", Optional.ofNullable(rs.getString("storage_key")).orElse(""), "status", rs.getString("status"), "source", Optional.ofNullable(rs.getString("knowledge_source_id")).orElse("")));
     if (records.isEmpty()) throw ApiException.missing();
     if ("DELETED".equals(records.getFirst().get("status"))) return;
     String key = (String) records.getFirst().get("key");
@@ -141,7 +149,9 @@ public class ManagedFileService {
       if (!target.startsWith(root)) throw ApiException.bad("The stored file could not be deleted");
       if (!key.isBlank()) Files.deleteIfExists(target);
     } catch (IOException e) { throw ApiException.bad("The stored file could not be deleted"); }
-    db.update("UPDATE managed_files SET status='DELETED', deleted_at=now(), updated_at=now() WHERE workspace_id=:ws AND id=:id", Map.of("ws",ws,"id",id));
+    db.update("UPDATE managed_files SET status='DELETED', deleted_at=now(), updated_at=now(), knowledge_status=CASE WHEN knowledge_source_id IS NULL THEN knowledge_status ELSE 'DELETED' END WHERE workspace_id=:ws AND id=:id", Map.of("ws",ws,"id",id));
+    String source = (String) records.getFirst().get("source");
+    if (!source.isBlank()) knowledge.deleteManagedFile(ws, UUID.fromString(source), tenant.user(), id);
     audit.record(ws, tenant.user(), "FILE_DELETED", "MANAGED_FILE", id);
   }
 

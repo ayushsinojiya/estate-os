@@ -1,0 +1,37 @@
+name: estraos-knowledge
+x-environment: &environment
+  RAG_DATABASES_JSON: ${RAG_DATABASES_JSON:?Set workspace ID to dedicated DSN JSON in .env}
+  RAG_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set the same service token as CRM}
+  RAG_STORAGE_PATH: /data/sources
+  RAG_POLL_SECONDS: ${RAG_POLL_SECONDS:-2}
+  RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+  RAG_EMBEDDING_REVISION: ${RAG_EMBEDDING_REVISION:-614241f622f53c4eeff9890bdc4f31cfecc418b3}
+  RAG_OCR_LANGUAGES: eng+hin+mar+guj
+  MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+  MISTRAL_EXTRACTION_MODEL: ${MISTRAL_EXTRACTION_MODEL:-}
+services:
+  migrate:
+    build: .
+    command: ['migrate']
+    environment: *environment
+  api:
+    build: .
+    command: ['api', '--host', '0.0.0.0']
+    environment: *environment
+    ports:
+      - '127.0.0.1:${RAG_PORT:-8090}:8090'
+    volumes:
+      - ./storage:/data/sources
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  worker:
+    build: .
+    command: ['worker']
+    environment: *environment
+    volumes:
+      - ./storage:/data/sources
+      - embedding-models:/models
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+volumes:
+  embedding-models:

@@ -13,15 +13,36 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-/** Stores the actual PDF behind a property document, for single and bulk uploads. */
+/**
+ * Stores the actual file behind a property document, for single and bulk uploads, and hands it to
+ * the knowledge service, which parses, indexes and publishes it automatically.
+ */
 @Service
 public class DocumentFileService {
   private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+  /** The formats the knowledge service ingests: extension -> stored content type. */
+  static final Map<String, String> TYPES =
+      Map.ofEntries(
+          Map.entry("pdf", "application/pdf"),
+          Map.entry(
+              "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+          Map.entry(
+              "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+          Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+          Map.entry("xls", "application/vnd.ms-excel"),
+          Map.entry("csv", "text/csv"),
+          Map.entry("txt", "text/plain"),
+          Map.entry("md", "text/markdown"),
+          Map.entry("jpg", "image/jpeg"),
+          Map.entry("jpeg", "image/jpeg"),
+          Map.entry("png", "image/png"),
+          Map.entry("webp", "image/webp"));
 
   private final NamedParameterJdbcTemplate db;
   private final TenantRepository repo;
   private final TenantContext tenant;
   private final AuditService audit;
+  private final KnowledgeService knowledge;
   private final long maxBytes;
 
   public DocumentFileService(
@@ -29,33 +50,70 @@ public class DocumentFileService {
       TenantRepository repo,
       TenantContext tenant,
       AuditService audit,
-      @Value("${app.documents.max-file-bytes:20971520}") long maxBytes) {
+      KnowledgeService knowledge,
+      @Value("${app.documents.max-file-bytes:52428800}") long maxBytes) {
     this.db = db;
     this.repo = repo;
     this.tenant = tenant;
     this.audit = audit;
+    this.knowledge = knowledge;
     this.maxBytes = maxBytes;
   }
 
+  static String extension(String name) {
+    int dot = name.lastIndexOf('.');
+    return dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+  }
+
+  private static boolean startsWith(byte[] content, byte[] prefix) {
+    return content.length >= prefix.length
+        && Arrays.equals(Arrays.copyOf(content, prefix.length), prefix);
+  }
+
   /**
-   * Accepts the upload only if it is genuinely a PDF.
-   *
-   * <p>The declared content type comes from the browser and is trivially spoofed, so the file's own
-   * header decides. Anything else is rejected before a byte reaches the database.
+   * True when the bytes are what the name says. The declared content type comes from the browser
+   * and is trivially spoofed, so the file's own header decides wherever the format has one.
    */
-  private byte[] pdfBytes(MultipartFile file) {
+  static boolean matches(String ext, byte[] content) {
+    return switch (ext) {
+      case "pdf" -> startsWith(content, PDF_MAGIC);
+      case "docx", "pptx", "xlsx" -> startsWith(content, new byte[] {'P', 'K'});
+      case "xls" -> startsWith(content, new byte[] {(byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0});
+      case "png" -> startsWith(content, new byte[] {(byte) 0x89, 'P', 'N', 'G'});
+      case "jpg", "jpeg" -> startsWith(content, new byte[] {(byte) 0xFF, (byte) 0xD8});
+      case "webp" ->
+          content.length > 12
+              && startsWith(content, "RIFF".getBytes(StandardCharsets.US_ASCII))
+              && new String(content, 8, 4, StandardCharsets.US_ASCII).equals("WEBP");
+      case "csv", "txt", "md" -> {
+        try {
+          StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(content));
+          yield true;
+        } catch (java.nio.charset.CharacterCodingException e) {
+          yield false;
+        }
+      }
+      default -> false;
+    };
+  }
+
+  /** Accepts the upload only if it is genuinely one of the knowledge formats. */
+  private byte[] fileBytes(MultipartFile file, String name) {
     if (file == null || file.isEmpty()) throw ApiException.bad("The uploaded file is empty");
     if (file.getSize() > maxBytes)
       throw ApiException.bad("File exceeds the " + (maxBytes / 1048576) + " MB upload limit");
+    String ext = extension(name);
+    if (!TYPES.containsKey(ext))
+      throw ApiException.bad(
+          "Unsupported file type. Upload PDF, Word, PowerPoint, Excel, CSV, text or an image");
     byte[] content;
     try {
       content = file.getBytes();
     } catch (java.io.IOException e) {
       throw ApiException.bad("The upload could not be read");
     }
-    if (content.length < PDF_MAGIC.length
-        || !Arrays.equals(Arrays.copyOf(content, PDF_MAGIC.length), PDF_MAGIC))
-      throw ApiException.bad("Only PDF files can be uploaded");
+    if (!matches(ext, content))
+      throw ApiException.bad("The file's contents do not match its ." + ext + " extension");
     return content;
   }
 
@@ -85,13 +143,13 @@ public class DocumentFileService {
   public Map<String, Object> store(Long ws, Long documentId, MultipartFile file) {
     tenant.manage(ws);
     repo.get("property_documents", ws, documentId); // authorises the document in this workspace
-    byte[] content = pdfBytes(file);
     String name = safeName(file.getOriginalFilename());
+    byte[] content = fileBytes(file, name);
     Map<String, Object> params = new HashMap<>();
     params.put("ws", ws);
     params.put("doc", documentId);
     params.put("filename", name);
-    params.put("type", "application/pdf");
+    params.put("type", TYPES.get(extension(name)));
     params.put("size", (long) content.length);
     params.put("sha", sha256(content));
     params.put("content", content);
@@ -103,6 +161,9 @@ public class DocumentFileService {
             + " sha256=excluded.sha256, content=excluded.content, updated_at=now()",
         params);
     audit.record(ws, tenant.user(), "DOCUMENT_FILE_UPLOADED", "PROPERTY_DOCUMENT", documentId);
+    // Indexing is automatic: the knowledge service parses, embeds and publishes the file, and the
+    // document's status follows it (see KnowledgeService).
+    knowledge.sendDocumentFile(ws, documentId, tenant.user());
     return describe(ws, documentId);
   }
 
@@ -124,10 +185,9 @@ public class DocumentFileService {
     for (MultipartFile file : files) {
       String name = safeName(file.getOriginalFilename());
       try {
-        byte[] content = pdfBytes(file);
-        String title = name.toLowerCase(Locale.ROOT).endsWith(".pdf")
-            ? name.substring(0, name.length() - 4)
-            : name;
+        byte[] content = fileBytes(file, name);
+        int dot = name.lastIndexOf('.');
+        String title = dot > 0 ? name.substring(0, dot) : name;
         var saved =
             repo.save(
                 "property_documents",
@@ -180,7 +240,7 @@ public class DocumentFileService {
 
   public record StoredFile(String filename, String contentType, byte[] content) {}
 
-  /** The stored PDF itself, for download. */
+  /** The stored file itself, for download. */
   public StoredFile download(Long ws, Long documentId) {
     tenant.require(ws);
     var rows =

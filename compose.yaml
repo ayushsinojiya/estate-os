@@ -1,14 +1,20 @@
 name: estraos
 
 x-rag-environment: &rag-environment
-  RAG_DATABASES_JSON: ${RAG_DATABASES_JSON:?Set RAG_DATABASES_JSON in .env}
-  RAG_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set RAG_INGESTION_TOKEN in .env}
-  RAG_STORAGE_PATH: /data/sources
-  RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
-  RAG_EMBEDDING_REVISION: ${RAG_EMBEDDING_REVISION:-614241f622f53c4eeff9890bdc4f31cfecc418b3}
-  RAG_OCR_LANGUAGES: ${RAG_OCR_LANGUAGES:-eng+hin+mar+guj}
+  RAG_DATABASE_URL: ${RAG_DATABASE_URL:?Set RAG_DATABASE_URL in .env}
+  RAG_SERVICE_TOKEN: ${RAG_SERVICE_TOKEN:?Set RAG_SERVICE_TOKEN in .env}
+  RAG_VOICE_TOKEN: ${RAG_VOICE_TOKEN:-}
+  RAG_VOICE_WORKSPACE_ID: ${RAG_VOICE_WORKSPACE_ID:-1}
+  PROVIDER_MODE: ${RAG_PROVIDER_MODE:-live}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  PARSER_PROVIDER: ${PARSER_PROVIDER:-openai}
   MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
-  MISTRAL_EXTRACTION_MODEL: ${MISTRAL_EXTRACTION_MODEL:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+  RERANKER: ${RERANKER:-bge}
+  COHERE_API_KEY: ${COHERE_API_KEY:-}
+  RERANK_BUDGET_MS: ${RERANK_BUDGET_MS:-150}
+  REWRITE_ON_VOICE: ${REWRITE_ON_VOICE:-false}
 
 services:
   api:
@@ -26,10 +32,9 @@ services:
       APP_DEFAULT_COUNTRY_CODE: ${DEFAULT_COUNTRY_CODE:-91}
       APP_CORS_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       APP_INTEGRATIONS_MODE: ${INTEGRATIONS_MODE:-mock}
-      APP_INGESTION_URL: http://knowledge-api:8090
-      APP_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set RAG_INGESTION_TOKEN in .env}
-      APP_INTEGRATIONS_RAG_URL: ${RAG_SERVICE_URL:-}
-      APP_INTEGRATIONS_RAG_API_KEY: ${RAG_API_KEY:-}
+      # The knowledge service is used for real whenever this URL is set (even in mock mode).
+      APP_INTEGRATIONS_RAG_URL: ${RAG_SERVICE_URL:-http://rag-api:8090}
+      APP_INTEGRATIONS_RAG_API_KEY: ${RAG_SERVICE_TOKEN:?Set RAG_SERVICE_TOKEN in .env}
       APP_INTEGRATIONS_VOICE_URL: ${VOICE_AGENT_SERVICE_URL:-}
       APP_INTEGRATIONS_VOICE_API_KEY: ${VOICE_AGENT_API_KEY:-}
       APP_INTEGRATIONS_NOTIFICATION_URL: ${NOTIFICATION_SERVICE_URL:-}
@@ -57,36 +62,37 @@ services:
       api:
         condition: service_healthy
 
-  knowledge-migrate:
+  rag-migrate:
     build: ./real-estate-ai-mvp/rag
     command: ["migrate"]
     environment: *rag-environment
 
-  knowledge-api:
+  rag-api:
     build: ./real-estate-ai-mvp/rag
-    command: ["api", "--host", "0.0.0.0"]
+    command: ["api", "--host", "0.0.0.0", "--port", "8090"]
     restart: unless-stopped
     environment: *rag-environment
     ports:
       - "127.0.0.1:${RAG_PORT:-8090}:8090"
     volumes:
-      - ./real-estate-ai-mvp/rag/storage:/data/sources
+      - rag-sources:/data/sources
+      - rag-models:/models
     depends_on:
-      knowledge-migrate:
+      rag-migrate:
         condition: service_completed_successfully
 
-  knowledge-worker:
+  rag-worker:
     build: ./real-estate-ai-mvp/rag
     command: ["worker"]
     restart: unless-stopped
     environment: *rag-environment
     volumes:
-      - ./real-estate-ai-mvp/rag/storage:/data/sources
-      - knowledge-embedding-models:/models
+      - rag-sources:/data/sources
     depends_on:
-      knowledge-migrate:
+      rag-migrate:
         condition: service_completed_successfully
 
 volumes:
   file-storage:
-  knowledge-embedding-models:
+  rag-sources:
+  rag-models:

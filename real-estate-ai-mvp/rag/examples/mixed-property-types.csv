@@ -1,6 +1,0 @@
-property_id,name,property_type,property_subtype,city,locality,availability,price,carpet_area,plot_area,bhk,frontage,workstations,clear_height,power_capacity,road_width
-SYNTH-APT-1,Synthetic apartment,Apartment,Residential,Pune,Baner,Available,85 lakh,800 sqft,,2,,,,,
-SYNTH-SHOP-1,Synthetic shop,Commercial Shop,Retail,Pune,Wakad,Available,95 lakh,450 sqft,,,18 ft,,,,
-SYNTH-OFFICE-1,Synthetic office,Office,Commercial,Pune,Kharadi,Available,2 crore,1800 sqft,,,,40,,,
-SYNTH-WH-1,Synthetic warehouse,Warehouse,Storage,Pune,Chakan,Available,3 crore,,12000 sqft,,,,32 ft,120 kVA,
-SYNTH-LAND-1,Synthetic plot,Land / Plot,Industrial land,Pune,Talegaon,Available,1 crore,,5000 sqft,,,,,,40 ft
