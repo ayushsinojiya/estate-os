@@ -11,35 +11,20 @@ x-rag-environment: &rag-environment
   MISTRAL_EXTRACTION_MODEL: ${MISTRAL_EXTRACTION_MODEL:-}
 
 services:
-  db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-estra_os}
-      POSTGRES_USER: ${POSTGRES_USER:-estraos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    volumes:
-      - crm-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   api:
     build: ./backend
     restart: unless-stopped
     environment:
       PORT: "8080"
-      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_ENABLED: ${SPRING_FLYWAY_ENABLED:-true}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-demo}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-estra_os}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-host.docker.internal}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-estra_os}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-estraos}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       APP_JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       APP_DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env}
       APP_DEFAULT_COUNTRY_CODE: ${DEFAULT_COUNTRY_CODE:-91}
-      APP_CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-3000}
+      APP_CORS_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       APP_INTEGRATIONS_MODE: ${INTEGRATIONS_MODE:-mock}
       APP_INGESTION_URL: http://knowledge-api:8090
       APP_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set RAG_INGESTION_TOKEN in .env}
@@ -54,9 +39,6 @@ services:
       - "127.0.0.1:${API_PORT:-8080}:8080"
     volumes:
       - file-storage:/data/files
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health || exit 1"]
       interval: 15s
@@ -75,30 +57,10 @@ services:
       api:
         condition: service_healthy
 
-  knowledge-db:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${RAG_POSTGRES_DB:-estraos_knowledge}
-      POSTGRES_USER: ${RAG_POSTGRES_USER:-knowledge}
-      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?Set RAG_POSTGRES_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:${RAG_DB_PORT:-55432}:5432"
-    volumes:
-      - knowledge-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   knowledge-migrate:
     build: ./rag
     command: ["migrate"]
     environment: *rag-environment
-    depends_on:
-      knowledge-db:
-        condition: service_healthy
 
   knowledge-api:
     build: ./rag
@@ -108,7 +70,7 @@ services:
     ports:
       - "127.0.0.1:${RAG_PORT:-8090}:8090"
     volumes:
-      - knowledge-source-files:/data
+      - ./rag/storage:/data/sources
     depends_on:
       knowledge-migrate:
         condition: service_completed_successfully
@@ -119,15 +81,12 @@ services:
     restart: unless-stopped
     environment: *rag-environment
     volumes:
-      - knowledge-source-files:/data
+      - ./rag/storage:/data/sources
       - knowledge-embedding-models:/models
     depends_on:
       knowledge-migrate:
         condition: service_completed_successfully
 
 volumes:
-  crm-postgres-data:
   file-storage:
-  knowledge-db-data:
-  knowledge-source-files:
   knowledge-embedding-models:

@@ -34,6 +34,7 @@ Thumbs.db
 *.log
 *.pid
 /real-estate-ai-mvp/rag/benchmarks/*.npz
+/rag_dummy_test_dataset
 
 # Local archives
 *.zip

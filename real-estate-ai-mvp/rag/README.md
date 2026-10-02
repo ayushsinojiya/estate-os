@@ -24,10 +24,11 @@ sections; BHK/bedrooms/bathrooms/balconies are never required or invented.
 
 ## Run with Docker
 
-1. Copy `.env.example` to `.env`. Set a unique DB password, a random service token
-   (at least 24 characters), and the **actual existing CRM workspace ID** in
-   `RAG_DATABASES_JSON`. URL-encode DSN passwords. The example `knowledge-db` hostname
-   applies inside Compose; use localhost + mapped port for a native worker/API.
+1. Run PostgreSQL with pgvector on the host and create a separate knowledge database.
+   Copy `.env.example` to `.env`. Set a random service token (at least 24 characters)
+   and the **actual existing CRM workspace ID** in `RAG_DATABASES_JSON`. URL-encode
+   DSN passwords. Containers reach the host at `host.docker.internal`; use
+   `localhost` for a native worker/API.
 2. Run from this directory:
 
    ```powershell
@@ -42,13 +43,14 @@ sections; BHK/bedrooms/bathrooms/balconies are never required or invented.
    every file gets its own outcome and publication transaction. Legacy stored
    files stay available in a separate tab and are not silently migrated.
 
-Default Compose exposes the new database only on `127.0.0.1:55432` and the API only
-on `127.0.0.1:8090`. Change the mapping if Windows reserves a port. Named volumes
-retain source files, model cache and the database. Do not use `down -v` to restart.
+Default Compose exposes only the API on `127.0.0.1:8090`; it does not create or
+expose a database container. Change the mapping if Windows reserves the port.
+Source files are bind-mounted from `./storage`; a Docker volume retains the model
+cache. Do not use `down -v` to restart.
 Initial model download requires internet; warm execution uses local CPU weights.
 Do not point the database volume or DSN at the existing CRM data directory.
 
-For more clients, provision another database on this server and append its DSN to
+For more clients, provision another database on the local PostgreSQL server and append its DSN to
 the JSON map. Each database is bound to exactly one CRM workspace. Re-run
 `estraos-rag migrate` after adding a store. Migrations are idempotent; running
 them twice does not reset source data. Keep application connections off while

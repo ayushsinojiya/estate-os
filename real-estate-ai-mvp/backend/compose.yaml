@@ -1,29 +1,14 @@
 name: estraos-backend
 
 services:
-  db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-estra_os}
-      POSTGRES_USER: ${POSTGRES_USER:-estraos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   api:
     build: .
     restart: unless-stopped
     environment:
       PORT: "8080"
-      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_ENABLED: ${SPRING_FLYWAY_ENABLED:-true}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-demo}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-estra_os}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://${POSTGRES_HOST:-host.docker.internal}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-estra_os}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-estraos}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       APP_JWT_SECRET: ${JWT_SECRET:?Set a 32+ byte JWT_SECRET in .env}
@@ -44,9 +29,6 @@ services:
       - "127.0.0.1:${API_PORT:-8080}:8080"
     volumes:
       - file-storage:/data/files
-    depends_on:
-      db:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health || exit 1"]
       interval: 15s
@@ -54,5 +36,4 @@ services:
       retries: 12
 
 volumes:
-  postgres-data:
   file-storage:

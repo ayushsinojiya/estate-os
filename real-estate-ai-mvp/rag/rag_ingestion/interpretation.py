@@ -48,5 +48,17 @@ class MistralInterpreter:
                 if choice.get('finish_reason') != 'stop':
                     raise ValueError('Interpretation response was incomplete; no knowledge was published')
                 return json.loads(choice['message']['content'])
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 429:
+                raise ValueError('Interpretation provider rate limit or quota reached (HTTP 429); check Mistral limits before retrying') from exc
+            if status == 400:
+                try:
+                    invalid_model = exc.response.json().get('type') == 'invalid_model'
+                except (ValueError, AttributeError):
+                    invalid_model = False
+                if invalid_model:
+                    raise ValueError('Interpretation model is invalid for chat completions; set MISTRAL_EXTRACTION_MODEL to a supported chat model') from exc
+            raise ValueError(f'Interpretation provider returned HTTP {status}; check provider configuration before retrying') from exc
         except (httpx.HTTPError, KeyError, json.JSONDecodeError) as exc:
             raise ValueError('Interpretation provider failed or returned malformed JSON; use Retry after checking provider configuration') from exc

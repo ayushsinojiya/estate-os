@@ -10,27 +10,10 @@ x-environment: &environment
   MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
   MISTRAL_EXTRACTION_MODEL: ${MISTRAL_EXTRACTION_MODEL:-}
 services:
-  knowledge-db:
-    image: pgvector/pgvector:pg16
-    environment:
-      POSTGRES_DB: ${RAG_POSTGRES_DB:-estraos_knowledge}
-      POSTGRES_USER: ${RAG_POSTGRES_USER:-knowledge}
-      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?Set a local knowledge DB password}
-    ports:
-      - '127.0.0.1:${RAG_DB_PORT:-55432}:5432'
-    volumes:
-      - knowledge-db:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U knowledge -d estraos_knowledge']
-      interval: 5s
-      timeout: 3s
-      retries: 20
   migrate:
     build: .
     command: ['migrate']
     environment: *environment
-    depends_on:
-      knowledge-db: {condition: service_healthy}
   api:
     build: .
     command: ['api', '--host', '0.0.0.0']
@@ -38,7 +21,7 @@ services:
     ports:
       - '127.0.0.1:${RAG_PORT:-8090}:8090'
     volumes:
-      - source-files:/data
+      - ./storage:/data/sources
     depends_on:
       migrate: {condition: service_completed_successfully}
   worker:
@@ -46,11 +29,9 @@ services:
     command: ['worker']
     environment: *environment
     volumes:
-      - source-files:/data
+      - ./storage:/data/sources
       - embedding-models:/models
     depends_on:
       migrate: {condition: service_completed_successfully}
 volumes:
-  knowledge-db:
-  source-files:
   embedding-models:
