@@ -274,9 +274,12 @@ class ToolBox:
                                     "instruction": "The caller wants details first. Do not offer visit times now; "
                                                    "answer their question."})
             if project["id"] in self.s.slots_offered_for:
-                return ToolOutcome({"project": project["name"], "alreadyOffered": list(self.s.offered_slots.values()),
-                                    "instruction": "You already offered these times. Do not read them again; answer "
-                                                   "the caller's question and mention the visit only if they ask."})
+                # The slot_start values must come back too: older turns' tool results are not kept in
+                # the model's history, and a booking needs one of them.
+                return ToolOutcome({"project": project["name"], "alreadyOffered": [
+                    {"slot_start": start, "label": label} for start, label in self.s.offered_slots.items()],
+                    "instruction": "You already offered these times. Do not read them again; answer the "
+                                   "caller's question. To book, use one of these slot_start values."})
         wanted = parse_when(a.preferred_day) if a.preferred_day else None
         today = now_ist().date()
         start_day = wanted.date() if wanted and wanted.date() >= today else today
@@ -306,8 +309,13 @@ class ToolBox:
             return False
 
     def _offered(self, slot_start: str) -> str | None:
+        """The offered slot the model means: its slot_start, or the label it was offered with."""
         for start in self.s.offered_slots:
             if self._same_instant(start, slot_start):
+                return start
+        wanted = " ".join(str(slot_start or "").lower().split())
+        for start, label in self.s.offered_slots.items():
+            if wanted and wanted == " ".join(str(label).lower().split()):
                 return start
         return None
 
@@ -317,6 +325,10 @@ class ToolBox:
             return self._unknown_project(a.project)
         offered = self._offered(a.slot_start)
         if offered is None:
+            if self.s.offered_slots:
+                return ToolOutcome({"error": "slot_not_offered", "offered": [
+                    {"slot_start": start, "label": label} for start, label in self.s.offered_slots.items()],
+                    "instruction": "Book again with one of these slot_start values; do not ask for slots again."})
             return ToolOutcome({"error": "slot_not_offered",
                                 "instruction": "Call get_visit_slots and book one of the offered slots."})
         lead_id = await self._lead_id()
