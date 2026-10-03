@@ -89,6 +89,9 @@ PLAIN = {
     "GOOGLE_CLOUD_LOCATION": "asia-south1",
     # data/runtime is the Azure Files mount; only durable state belongs here.
     "RUNTIME_DIR": "/srv/data/runtime",
+    # WAL needs shared memory that an Azure Files mount cannot share between the old and the new
+    # replica during a restart, which then never completes. The rollback journal works.
+    "SQLITE_JOURNAL_MODE": "DELETE",
     # Regenerable audio caches go on the container's local disk. On the network mount the
     # synchronous phrase-cache read on the speech path stalls the event loop and chops the audio.
     # Per-call debug audio goes to the container's local disk: it writes a file per call, which
@@ -169,7 +172,7 @@ def main() -> None:
                 "volumes": [{
                     "name": "state",
                     "storageType": "AzureFile",
-                    "storageName": "agentstate",
+                    "storageName": os.environ.get("AGENT_STORAGE_NAME", "agentstate"),
                     "mountOptions": "nobrl,dir_mode=0777,file_mode=0777,uid=0,gid=0,mfsymlinks",
                 }],
             },

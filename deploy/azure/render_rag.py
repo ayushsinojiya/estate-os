@@ -90,7 +90,7 @@ def main() -> None:
                 # One API replica keeps the query-embedding cache warm; workers coordinate through
                 # SKIP LOCKED jobs, so one is enough for this volume and more can be added safely.
                 "scale": {"minReplicas": 1, "maxReplicas": 1},
-                "volumes": [{"name": "sources", "storageType": "AzureFile", "storageName": "ragsources",
+                "volumes": [{"name": "sources", "storageType": "AzureFile", "storageName": os.environ.get("RAG_STORAGE_NAME", "ragsources"),
                              "mountOptions": "dir_mode=0777,file_mode=0777,uid=0,gid=0,mfsymlinks"}],
             },
         },

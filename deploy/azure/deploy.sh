@@ -4,6 +4,7 @@
 #
 #   ./deploy.sh            full deploy (safe to re-run; every step is idempotent)
 #   ./deploy.sh images     rebuild and roll out new images only
+#   ./deploy.sh agent      rebuild and roll out the voice agent only
 #   ./deploy.sh urls       print the deployed URLs
 #
 # Images are built by ACR Tasks in the cloud, so no local Docker, JDK or Maven is needed.
@@ -21,7 +22,13 @@ set -a; . ./azure.env; set +a
 [[ "$PREFIX" =~ ^[a-z0-9]{3,12}$ ]] || { echo "PREFIX must be 3-12 lowercase letters/digits" >&2; exit 1; }
 
 ACR="${PREFIX}acr"
-ENVIRONMENT="${PREFIX}-env"
+# A subscription may allow only one Container Apps environment per region; set
+# CONTAINERAPP_ENV_NAME / CONTAINERAPP_ENV_RG in azure.env to deploy into an existing one.
+ENVIRONMENT="${CONTAINERAPP_ENV_NAME:-${PREFIX}-env}"
+ENV_RG="${CONTAINERAPP_ENV_RG:-$RESOURCE_GROUP}"
+# Environment storage names are per environment; prefixed so a shared environment never collides.
+AGENT_STORAGE_NAME="${PREFIX}state"
+RAG_STORAGE_NAME="${PREFIX}rag"
 PG="${PREFIX}-pg"
 STORAGE="${PREFIX}storage"
 SHARE="agent-state"
@@ -109,13 +116,13 @@ provision() {
     -n "$RAG_SHARE" --quota 32 -o none 2>/dev/null || true
 
   log "Container Apps environment $ENVIRONMENT"
-  az containerapp env show -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" -o none 2>/dev/null ||
-    az containerapp env create -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" -l "$LOCATION" -o none
-  az containerapp env storage set -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" \
-    --storage-name agentstate --azure-file-account-name "$STORAGE" --azure-file-account-key "$key" \
+  az containerapp env show -n "$ENVIRONMENT" -g "$ENV_RG" -o none 2>/dev/null ||
+    az containerapp env create -n "$ENVIRONMENT" -g "$ENV_RG" -l "$LOCATION" -o none
+  az containerapp env storage set -n "$ENVIRONMENT" -g "$ENV_RG" \
+    --storage-name "$AGENT_STORAGE_NAME" --azure-file-account-name "$STORAGE" --azure-file-account-key "$key" \
     --azure-file-share-name "$SHARE" --access-mode ReadWrite -o none
-  az containerapp env storage set -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" \
-    --storage-name ragsources --azure-file-account-name "$STORAGE" --azure-file-account-key "$key" \
+  az containerapp env storage set -n "$ENVIRONMENT" -g "$ENV_RG" \
+    --storage-name "$RAG_STORAGE_NAME" --azure-file-account-name "$STORAGE" --azure-file-account-key "$key" \
     --azure-file-share-name "$RAG_SHARE" --access-mode ReadWrite -o none
 }
 
@@ -201,7 +208,8 @@ RAG_INTERNAL_URL="http://${RAG_API_APP}"
 
 deploy_rag() {
   log "Deploying knowledge service (API + worker)"
-  ENV_ID="$(az containerapp env show -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" --query id -o tsv)"
+  ENV_ID="$(az containerapp env show -n "$ENVIRONMENT" -g "$ENV_RG" --query id -o tsv)"
+  export RAG_STORAGE_NAME
   export ENV_ID ACR_SERVER ACR_USER ACR_PASS TAG LOCATION RAG_SERVICE_TOKEN RAG_VOICE_TOKEN OPENAI_API_KEY
   export RAG_VOICE_WORKSPACE_ID="${SERVICE_ACCOUNT_WORKSPACE_ID:-1}"
   export RAG_DATABASE_URL="postgresql://${POSTGRES_ADMIN_USER}:${POSTGRES_ADMIN_PASSWORD}@${PG}.postgres.database.azure.com:5432/estraos_knowledge?sslmode=require"
@@ -251,7 +259,7 @@ deploy_crm() {
     az containerapp update -n "$CRM_APP" -g "$RESOURCE_GROUP" \
       --image "$ACR_SERVER/crm-api:$TAG" --set-env-vars "${env[@]}" -o none
   else
-    az containerapp create -n "$CRM_APP" -g "$RESOURCE_GROUP" --environment "$ENVIRONMENT" \
+    az containerapp create -n "$CRM_APP" -g "$RESOURCE_GROUP" --environment "$(az containerapp env show -n "$ENVIRONMENT" -g "$ENV_RG" --query id -o tsv)" \
       --image "$ACR_SERVER/crm-api:$TAG" \
       --registry-server "$ACR_SERVER" --registry-username "$ACR_USER" --registry-password "$ACR_PASS" \
       --target-port 8080 --ingress external --transport auto \
@@ -265,8 +273,8 @@ deploy_agent() {
   # One replica only: the rate governor, degradation monitors and live calls are in-process state.
   # Scaling out needs that state moved to a shared store first.
   local yaml; yaml="$(mktemp -t agent-app)"
-  ENV_ID="$(az containerapp env show -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" --query id -o tsv)"
-  export ENV_ID ACR_SERVER ACR_USER ACR_PASS TAG LOCATION
+  ENV_ID="$(az containerapp env show -n "$ENVIRONMENT" -g "$ENV_RG" --query id -o tsv)"
+  export ENV_ID ACR_SERVER ACR_USER ACR_PASS TAG LOCATION AGENT_STORAGE_NAME
   export CRM_SERVICE_EMAIL="${SERVICE_ACCOUNT_EMAIL:-}"
   export CRM_SERVICE_PASSWORD="${SERVICE_ACCOUNT_PASSWORD:-}"
   export CRM_WORKSPACE_ID="${SERVICE_ACCOUNT_WORKSPACE_ID:-1}"
@@ -286,7 +294,7 @@ deploy_web() {
   if az containerapp show -n "$WEB_APP" -g "$RESOURCE_GROUP" -o none 2>/dev/null; then
     az containerapp update -n "$WEB_APP" -g "$RESOURCE_GROUP" --image "$ACR_SERVER/crm-web:$TAG" -o none
   else
-    az containerapp create -n "$WEB_APP" -g "$RESOURCE_GROUP" --environment "$ENVIRONMENT" \
+    az containerapp create -n "$WEB_APP" -g "$RESOURCE_GROUP" --environment "$(az containerapp env show -n "$ENVIRONMENT" -g "$ENV_RG" --query id -o tsv)" \
       --image "$ACR_SERVER/crm-web:$TAG" \
       --registry-server "$ACR_SERVER" --registry-username "$ACR_USER" --registry-password "$ACR_PASS" \
       --target-port 8080 --ingress external \
@@ -328,6 +336,10 @@ EOF
 
 case "${1:-all}" in
   urls) urls ;;
+  agent)
+    # Voice agent only: rebuild its image and roll it out.
+    acr_creds; build_agent_image; deploy_agent; wire_together; urls
+    ;;
   images)
     acr_creds
     build_crm_image; build_agent_image; build_rag_image
@@ -350,5 +362,5 @@ case "${1:-all}" in
     urls
     echo "Secrets were written to azure.env. Keep that file out of source control."
     ;;
-  *) echo "usage: $0 [all|images|urls]" >&2; exit 1 ;;
+  *) echo "usage: $0 [all|images|agent|urls]" >&2; exit 1 ;;
 esac

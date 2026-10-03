@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     language_switch_confidence: float = 0.6
 
     runtime_dir: Path = REPO_ROOT / "data" / "runtime"
+    # SQLite journal for the stores in runtime_dir. WAL needs shared memory, which a network file
+    # share (Azure Files) cannot provide across hosts: during a restart the new replica could not
+    # open a file the old one still held in WAL mode, so the restart never completed. Use DELETE
+    # when runtime_dir is a network mount.
+    sqlite_journal_mode: Literal["WAL", "DELETE"] = "WAL"
     # Scratch space for per-call debug audio. Never put this on network storage: it writes a file
     # per call. Defaults to runtime_dir when unset.
     cache_dir: Path | None = None
