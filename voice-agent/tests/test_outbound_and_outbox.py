@@ -4,7 +4,7 @@ import asyncio
 
 from app.outbound.dialer import OutboundDialer
 from app.outbound.registry import (CONNECTED, DIALING, NO_ANSWER, QUEUED, REFUSED, SIMULATED,
-                                   CallRegistry)
+                                   CallRegistry, OutboundRecord)
 from app.outbox.outbox import DEAD, DELIVERED, PENDING, Outbox, PermanentFailure
 
 
@@ -146,3 +146,20 @@ def test_outbox_stops_on_a_permanent_rejection(tmp_path):
     outbox.enqueue("ingest", "call-2", {})
     asyncio.run(outbox.deliver_due())
     assert outbox.item("call-2")["status"] == DEAD
+
+
+def test_delete_journal_lets_a_second_process_open_the_stores(tmp_path):
+    """On Azure Files a restart starts the new replica while the old one still holds the files.
+
+    DELETE mode keeps no -wal/-shm files (shared memory is what fails across hosts), and a second
+    connection opens and writes while the first is still open.
+    """
+    old_registry = CallRegistry(tmp_path / "calls.sqlite", journal_mode="DELETE")
+    old_outbox = Outbox(tmp_path / "outbox.sqlite", journal_mode="DELETE")
+    old_registry.add(OutboundRecord("req-old", "+919800000001"))
+    new_registry = CallRegistry(tmp_path / "calls.sqlite", journal_mode="DELETE")
+    new_outbox = Outbox(tmp_path / "outbox.sqlite", journal_mode="DELETE")
+    new_registry.add(OutboundRecord("req-new", "+919800000002"))
+    assert new_registry.get("req-old") is not None and old_registry.get("req-new") is not None
+    assert not list(tmp_path.glob("*-wal")) and not list(tmp_path.glob("*-shm"))
+    assert old_outbox is not new_outbox

@@ -104,3 +104,54 @@ def test_an_end_call_tool_hangs_up_after_the_reply():
     asyncio.run(scenario())
     assert speech.started == ["Thank you, goodbye."]
     assert hung_up and s.metrics.end_reason == "agent_closed"
+
+
+class _ToolsSeenLLM(ScriptedLLM):
+    """Records which tools each hop declared."""
+
+    def __init__(self, steps):
+        super().__init__(steps)
+        self.tools_per_call: list[int] = []
+
+    async def stream(self, messages, tools, **kw):
+        self.tools_per_call.append(len(tools))
+        async for event in super().stream(messages, tools, **kw):
+            yield event
+
+
+def test_end_call_repeated_instead_of_a_goodbye_still_closes_politely():
+    """The model ended the call, then called end_call again instead of saying goodbye: the second call
+    is ignored and the closing line is spoken, instead of a provider error and an apology."""
+    ended = []
+
+    async def end(args):
+        ended.append(True)
+        return ToolOutcome({"ok": True}, end_call=True, end_reason="agent_closed", skip_closing=True)
+
+    tool = Tool(ToolSpec("end_call", "end", {"type": "object", "properties": {}}), end, filler=None)
+    llm = _ToolsSeenLLM([call("end_call"), call("end_call"), say("should never be asked")])
+    hung_up = []
+    s, speech = session(llm, StubConversation(tool_list=[tool]))
+    s.hangup = lambda: hung_up.append(True)
+
+    async def scenario():
+        await s.turns.turns.put(type("T", (), {"text": "ji", "language": None,
+                                               "committed_at": 0, "speech_ended_at": 0})())
+        await asyncio.wait_for(s._turn_loop(), 1)
+
+    asyncio.run(scenario())
+    assert ended == [True]                      # the second end_call was not run
+    assert len(llm.calls) == 2                  # no third hop
+    assert all(n == 1 for n in llm.tools_per_call)  # tools declared on every hop, including the last
+    assert speech.started == [PHRASES["closing"]] and hung_up
+
+
+def test_the_last_hop_still_declares_tools():
+    async def run(args):
+        return ToolOutcome({"ok": True})
+
+    llm = _ToolsSeenLLM([call("lookup", q="a"), call("lookup", q="b"), call("lookup", q="c"),
+                         call("lookup", q="d"), say("never")])
+    s, _ = session(llm, StubConversation(tool_list=[_tool(run, filler=None)]))
+    asyncio.run(s._respond("q", "en"))
+    assert llm.tools_per_call and all(n == 1 for n in llm.tools_per_call)

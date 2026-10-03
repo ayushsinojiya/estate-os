@@ -42,10 +42,10 @@ class OutboundRecord:
 
 
 class CallRegistry:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, journal_mode: str = "WAL"):
         path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self._db.execute("PRAGMA journal_mode=WAL")
+        self._db.execute(f"PRAGMA journal_mode={'DELETE' if journal_mode == 'DELETE' else 'WAL'}")
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript("""

@@ -78,6 +78,12 @@ class CallState:
     callback_at: str | None = None
     handover_reason: str | None = None
     asked_to_book: bool = False
+    # The caller's latest turn asked about a visit (reset every turn).
+    wants_visit_now: bool = False
+    # The caller wants details first / not now: no visit offers until they bring it up.
+    visit_deferred: bool = False
+    # Projects whose visit times were already offered in this call.
+    slots_offered_for: list[str] = field(default_factory=list)
     escalations: list[str] = field(default_factory=list)
     unanswered: list[str] = field(default_factory=list)
     questions: list[str] = field(default_factory=list)

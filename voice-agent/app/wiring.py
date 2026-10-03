@@ -208,8 +208,8 @@ def build_container(settings: Settings, plugin_factory: PluginFactory | None = N
     router = LLMRouter(primary, fallback, governor=governor, leg=llm_leg,
                        first_token_timeout_s=settings.first_token_timeout_ms / 1000,
                        live_max_wait_s=settings.governor_live_max_wait_ms / 1000)
-    registry = CallRegistry(settings.runtime_dir / "calls.sqlite")
-    outbox = Outbox(settings.runtime_dir / "outbox.sqlite")
+    registry = CallRegistry(settings.runtime_dir / "calls.sqlite", journal_mode=settings.sqlite_journal_mode)
+    outbox = Outbox(settings.runtime_dir / "outbox.sqlite", journal_mode=settings.sqlite_journal_mode)
     metrics = Metrics()
     ws_base = settings.public_ws_base_url.rstrip("/")
     dialer = OutboundDialer(

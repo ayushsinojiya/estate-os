@@ -23,13 +23,19 @@ class Settings(BaseSettings):
 
     timezone: str = "Asia/Kolkata"
     # Language a caller is greeted in when the lead's own language is not known yet.
-    default_inbound_language: Literal["mr", "hi", "en", "gu"] = "hi"
-    default_outbound_language: Literal["mr", "hi", "en", "gu"] = "mr"
+    # Riya speaks Hindi, Marathi and English only.
+    default_inbound_language: Literal["mr", "hi", "en"] = "hi"
+    default_outbound_language: Literal["mr", "hi", "en"] = "mr"
     # How sure the detector must be to switch mid-call. Hindi and Marathi overlap heavily, so a
     # real switch often scores just above chance; the STT's own tag can override this.
     language_switch_confidence: float = 0.6
 
     runtime_dir: Path = REPO_ROOT / "data" / "runtime"
+    # SQLite journal for the stores in runtime_dir. WAL needs shared memory, which a network file
+    # share (Azure Files) cannot provide across hosts: during a restart the new replica could not
+    # open a file the old one still held in WAL mode, so the restart never completed. Use DELETE
+    # when runtime_dir is a network mount.
+    sqlite_journal_mode: Literal["WAL", "DELETE"] = "WAL"
     # Scratch space for per-call debug audio. Never put this on network storage: it writes a file
     # per call. Defaults to runtime_dir when unset.
     cache_dir: Path | None = None
@@ -143,6 +149,13 @@ class Settings(BaseSettings):
     # Outbound pacing and admin access. ADMIN_API_TOKEN is the CRM's VOICE_AGENT_API_KEY.
     admin_api_token: str = ""
     llm_probe_interval_s: float = 30.0
+    # ---- per-call cost log (telephony excluded); defaults are Sarvam's published prices in INR
+    cost_stt_per_hour: float = 30.0
+    cost_tts_per_1k_chars: float = 3.0
+    cost_llm_input_per_m: float = 29.28
+    cost_llm_cached_per_m: float = 10.98
+    cost_llm_output_per_m: float = 73.20
+    cost_currency: str = "INR"
     outbound_max_in_flight: int = 5
     outbound_min_interval_s: float = 2.0
     outbound_dial_timeout_s: float = 180.0
@@ -153,14 +166,19 @@ class Settings(BaseSettings):
 
     # ---- Real-estate domain
     workspace_id: str = "ws_demo"
-    # Fallback when the CRM workspace has no builder name of its own.
-    builder_name: str = "XYZ Realty"
+    # The company Riya speaks for. When set it always wins; when blank, the CRM workspace's name is
+    # used (e.g. "Westhaven Realty · Demo" -> "Westhaven Realty").
+    builder_name: str = ""
     # Spoken once in the opening line.
     disclose_ai: bool = True
     disclose_recording: bool = True
     # TRAI calling window for outbound calls, local time (Asia/Kolkata).
     calling_hours_start: str = "09:00"
     calling_hours_end: str = "21:00"
+    # Comma-separated test numbers (your own phones) that may be called outside the window above,
+    # for testing at any hour. Matched on the last 10 digits. The do-not-call check still applies.
+    # Never put a customer's number here.
+    test_phone_allowlist: str = ""
     # A sales line for warm transfer. Blank: escalation becomes a scheduled callback + handover.
     sales_transfer_number: str = ""
     # Whether the provider supports a live transfer at all (VoiceLink: not documented yet).
@@ -226,5 +244,12 @@ class Settings(BaseSettings):
 
 
 @lru_cache
+
+def cost_prices(s: "Settings"):
+    from app.observability.cost import Prices
+    return Prices(s.cost_stt_per_hour, s.cost_tts_per_1k_chars, s.cost_llm_input_per_m,
+                  s.cost_llm_cached_per_m, s.cost_llm_output_per_m, s.cost_currency)
+
+
 def get_settings() -> Settings:
     return Settings()

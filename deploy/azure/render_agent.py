@@ -21,6 +21,7 @@ SECRETS = {
     "rumik-key": "RUMIK_API_KEY",
     "voicelink-password": "VOICE_LINK_PASSWORD",
     "voicelink-webhook-token": "VOICE_LINK_WEBHOOK_TOKEN",
+    "rag-voice-token": "RAG_VOICE_TOKEN",
 }
 
 # Environment variable -> secret name, wired only when that secret has a value.
@@ -32,6 +33,7 @@ SECRET_ENV = {
     "RUMIK_API_KEY": "rumik-key",
     "VOICE_LINK_PASSWORD": "voicelink-password",
     "VOICE_LINK_WEBHOOK_TOKEN": "voicelink-webhook-token",
+    "RAG_VOICE_TOKEN": "rag-voice-token",
 }
 
 # Plain settings, passed through from azure.env with a default when unset.
@@ -42,12 +44,16 @@ PLAIN = {
     "WORKSPACE_ID": "ws_demo",
     "BUILDER_NAME": "XYZ Realty",
     "DEFAULT_OUTBOUND_LANGUAGE": "mr",
+    # Your own phones, callable outside 09:00-21:00 IST for testing. Never a customer's number.
+    "TEST_PHONE_ALLOWLIST": "",
     "CRM_MODE": "http",
     "CRM_BASE_URL": "https://placeholder.invalid",
     "CRM_WORKSPACE_ID": "1",
     "CRM_SERVICE_EMAIL": "",
     "CRM_TOKEN_REFRESH_MARGIN_S": "120",
     "CRM_CATALOG_REFRESH_S": "900",
+    # The knowledge service (brochures, FAQs, charges) over the environment's internal network.
+    "RAG_SERVICE_URL": "",
     "LANGUAGE_SWITCH_CONFIDENCE": "0.6",
     "VOICE_LINK_BASE_URL": "https://app.voicelink.co.in/api",
     "VOICE_LINK_USERNAME": "",
@@ -79,12 +85,18 @@ PLAIN = {
     "SARVAM_STT_MODE": "codemix",
     "SARVAM_STT_LANGUAGE_CODE": "auto",
     "SARVAM_STT_STREAMING_LANGUAGE_CODE": "unknown",
-    "SARVAM_STT_HIGH_VAD_SENSITIVITY": "true",
+    # High sensitivity turned background noise on phone lines into "speech" (and interruptions).
+    "SARVAM_STT_HIGH_VAD_SENSITIVITY": "false",
+    # Speech without recognisable words must last this long to interrupt Riya (noise is shorter).
+    "BARGE_IN_MIN_SPEECH_MS": "600",
     "STT_FLUSH_AFTER_MS": "150",
     "GOOGLE_CLOUD_PROJECT": "",
     "GOOGLE_CLOUD_LOCATION": "asia-south1",
     # data/runtime is the Azure Files mount; only durable state belongs here.
     "RUNTIME_DIR": "/srv/data/runtime",
+    # WAL needs shared memory that an Azure Files mount cannot share between the old and the new
+    # replica during a restart, which then never completes. The rollback journal works.
+    "SQLITE_JOURNAL_MODE": "DELETE",
     # Regenerable audio caches go on the container's local disk. On the network mount the
     # synchronous phrase-cache read on the speech path stalls the event loop and chops the audio.
     # Per-call debug audio goes to the container's local disk: it writes a file per call, which
@@ -165,7 +177,7 @@ def main() -> None:
                 "volumes": [{
                     "name": "state",
                     "storageType": "AzureFile",
-                    "storageName": "agentstate",
+                    "storageName": os.environ.get("AGENT_STORAGE_NAME", "agentstate"),
                     "mountOptions": "nobrl,dir_mode=0777,file_mode=0777,uid=0,gid=0,mfsymlinks",
                 }],
             },

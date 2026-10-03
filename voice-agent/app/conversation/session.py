@@ -25,9 +25,10 @@ from app.conversation.turn_detection import TurnConfig, TurnDetector
 from app.domain.base import (CallerTurnAction, CallInfo, CallRecord, Conversation, PhraseBook, Tool,
                              ToolOutcome)
 from app.lang.devanagari import to_devanagari_speech
-from app.lang.languages import Lang, LanguageTracker
+from app.lang.languages import Lang, LanguageTracker, is_noise
 from app.lang.redaction import redact
-from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady
+from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady, Usage
+from app.observability.cost import CostMeter
 from app.llm.router import AllProvidersFailed, LLMRoute, LLMRouter
 
 log = logging.getLogger(__name__)
@@ -118,6 +119,8 @@ class CallSession:
         self._exchanges: list[list[Message]] = []
         self._ending = False
         self._pending_end: ToolOutcome | None = None
+        self._goodbye_said = False
+        self.cost = CostMeter()
         self._tasks: list[asyncio.Task] = []
         self._reply: asyncio.Task | None = None
         self._barge_task: asyncio.Task | None = None
@@ -155,7 +158,17 @@ class CallSession:
     # ---- answering
 
     def _history(self) -> list[Message]:
-        return [m for turn in self._exchanges[-self.deps.history_turns:] for m in turn]
+        """Recent exchanges for the model. Only the latest keeps its tool calls and results (a visit
+        is booked with the slot times offered one turn earlier); older ones keep just what was said,
+        so earlier lookups do not grow every later prompt and delay the answer."""
+        recent = self._exchanges[-self.deps.history_turns:]
+        out: list[Message] = []
+        for i, turn in enumerate(recent):
+            if i == len(recent) - 1:
+                out.extend(turn)
+            else:
+                out.extend(m for m in turn if m.role in ("user", "assistant") and not m.tool_calls)
+        return out
 
     async def _run_tool(self, tools: dict[str, Tool], call: ToolCall) -> ToolOutcome:
         self.metrics.tool_calls += 1
@@ -198,6 +211,7 @@ class CallSession:
         specs = [t.spec for t in tools.values()]
         working: list[Message] = [Message("user", question)]
         reply = ""
+        ending = False
         try:
             for hop in range(self.deps.max_tool_hops + 1):
                 last_hop = hop == self.deps.max_tool_hops
@@ -206,10 +220,20 @@ class CallSession:
                     return self.conversation.messages(lang) + self._history() + working
 
                 buffer, hop_text, calls = "", "", []
+                hop_started, first_event_ms = time.monotonic(), None
+                self.cost.add_request("call")
+                # Tools stay declared on the last hop: the conversation already holds tool calls,
+                # and a provider rejects that history without tool definitions (Sarvam: 400). Calls
+                # made on the last hop are ignored below.
                 async for event in self.deps.router.stream(
-                        self.route, build, [] if last_hop else specs,
+                        self.route, build, specs,
                         max_tokens=self.deps.llm_max_tokens,
                         temperature=self.deps.llm_temperature):
+                    if first_event_ms is None:
+                        first_event_ms = (time.monotonic() - hop_started) * 1000
+                    if isinstance(event, Usage):
+                        self.cost.add_usage("call", event)
+                        continue
                     if isinstance(event, ToolCallReady):
                         calls.append(event.call)
                         continue
@@ -236,7 +260,13 @@ class CallSession:
                     sentence = self.conversation.screen_reply(buffer.strip(), lang)
                     reply = f"{reply} {sentence}".strip()
                     yield sentence
-                if not calls:
+                log.info("call %s: model hop %d first output %.0fms, done %.0fms, %d tool call(s)",
+                         self.info.call_id, hop, first_event_ms or 0, (time.monotonic() - hop_started) * 1000,
+                         len(calls))
+                if ending:
+                    self._goodbye_said = bool(hop_text.strip())
+                    break
+                if not calls or last_hop:
                     break
                 working.append(Message("assistant", hop_text, tool_calls=calls))
                 filler = next((tools[c.name].filler for c in calls
@@ -250,6 +280,10 @@ class CallSession:
                                            tool_call_id=call.id, name=call.name))
                     if outcome.end_call and self._pending_end is None:
                         self._pending_end = outcome
+                if self._pending_end is not None:
+                    # One more hop lets the model say its own goodbye; any tool it calls then
+                    # (typically end_call again) is ignored.
+                    ending = True
         finally:
             if reply:
                 working.append(Message("assistant", reply))
@@ -337,6 +371,12 @@ class CallSession:
             text = (turn.text or "").strip()
             if not text:
                 continue
+            if is_noise(text):
+                # Background noise, not the caller: no reply ("sorry, I didn't catch that" to a cough
+                # sounds distracted). The silence prompt still covers a caller who has gone quiet.
+                log.info("call %s: ignored a noise transcript (%d chars)", self.info.call_id, len(text))
+                self.silence.arm()
+                continue
             lang = self.lang.observe(text, turn.language)
             self.transcript.append({"speaker": "caller", "text": redact(text, self.deps.sensitive)})
 
@@ -358,7 +398,8 @@ class CallSession:
             if self._pending_end is not None and not self._ending:
                 outcome = self._pending_end
                 self.metrics.end_reason = outcome.end_reason or "agent_ended"
-                await self._end(say_closing=not outcome.skip_closing)
+                # If the model never said goodbye after ending the call, the closing line does.
+                await self._end(say_closing=not outcome.skip_closing or not self._goodbye_said)
                 return
 
     async def _respond(self, text: str, lang: Lang, turn=None) -> None:
@@ -468,10 +509,14 @@ class CallSession:
         return self.metrics
 
     def record(self) -> CallRecord:
+        # Speech-to-text streams every second of the call; synthesised characters are counted by the
+        # speech output (cached phrases excluded).
+        self.cost.stt_seconds = self.metrics.duration_s
+        self.cost.tts_chars = getattr(self.speech, "synth_chars", 0)
         return CallRecord(info=self.info, transcript=list(self.transcript),
                           languages_used=sorted(self.lang.used), final_language=self.lang.current,
                           duration_s=round(self.metrics.duration_s, 2),
-                          end_reason=self.metrics.end_reason, metrics=self.metrics.summary())
+                          end_reason=self.metrics.end_reason, metrics=self.metrics.summary(), cost=self.cost)
 
     async def _end(self, say_closing: bool = True) -> None:
         if self._ending:

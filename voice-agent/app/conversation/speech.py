@@ -57,6 +57,7 @@ class AudioSpeechOutput:
         self.output_gain = output_gain
         self._active = 0
         self._play_end = 0.0
+        self.synth_chars = 0  # characters sent to the TTS provider during this call (cost log)
         # One clip at a time: two plays sharing the line would interleave their frames.
         self._line = asyncio.Lock()
 
@@ -75,6 +76,8 @@ class AudioSpeechOutput:
 
     async def speak_text(self, text: str, lang: Lang, phrase_key: str | None = None) -> PlaybackResult:
         cached = self.cache.get(phrase_key, lang) if self.cache else None
+        if not cached:
+            self.synth_chars += len(text)  # billed by the TTS provider; a cache hit is free
         return await self._play(_one(cached) if cached else self.tts.synthesize(text, lang), len(text))
 
     async def speak_stream(self, texts: AsyncIterator[str], lang: Lang) -> PlaybackResult:
@@ -88,6 +91,7 @@ class AudioSpeechOutput:
             try:
                 async for text in texts:
                     chars += len(text)
+                    self.synth_chars += len(text)
                     async for chunk in self.tts.synthesize(text, lang):
                         await audio.put(chunk)
                 await audio.put(None)

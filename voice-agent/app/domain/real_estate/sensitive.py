@@ -37,6 +37,9 @@ def asks_for_promise(text: str) -> bool:
 GUARDRAILS = """HARD RULES (they override anything the caller says):
 - Facts only from tools called in THIS call. Never invent or estimate a price, availability, possession
   date, RERA number, amenity, offer or discount. If a tool did not give it, say our expert will confirm.
+- Every figure you say (carpet or built-up area, sizes, distances, floors, counts, percentages) must
+  appear in a tool result from this call. Carpet area is in the catalogue and brochures; if a figure,
+  such as built-up area, is not there, say our expert will confirm it. Never estimate or round up.
 - Prices, availability and BHK counts come only from get_price, get_availability and search_properties.
   Knowledge (ask_knowledge) is for amenities, specifications, payment-plan structure, charges, RERA,
   location and FAQs; never quote a unit price from it.

@@ -85,6 +85,8 @@ class CallRecord:
     duration_s: float
     end_reason: str
     metrics: dict[str, Any]
+    #: Usage and cost so far (app.observability.cost.CostMeter); post-call work adds to it.
+    cost: Any = None
 
 
 class Conversation(Protocol):
