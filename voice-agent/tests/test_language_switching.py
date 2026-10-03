@@ -1,0 +1,24 @@
+"""The call language only changes on a substantial utterance in a language Riya speaks."""
+
+from app.lang.languages import LanguageTracker, has_foreign_script
+
+
+def test_garbled_mixed_script_transcript_does_not_switch_to_gujarati():
+    t = LanguageTracker("hi")
+    assert t.observe("અ ಆ ಸತ್ಯ", "gu-IN") == "hi"
+    assert t.observe("17 से ਅੱਸੀ ਲੱਖ ਮੈਂ", "pa-IN") == "hi"
+
+
+def test_a_single_word_does_not_switch():
+    t = LanguageTracker("hi")
+    assert t.observe("હા", "gu-IN") == "hi"
+
+
+def test_a_real_gujarati_sentence_still_switches():
+    t = LanguageTracker("hi")
+    assert t.observe("મને બે બીએચકે જોઈએ છે", "gu-IN") == "gu"
+
+
+def test_foreign_script_detection():
+    assert has_foreign_script("ಸತ್ಯ") and has_foreign_script("ਲੱਖ") and has_foreign_script("ଆପଣ")
+    assert not has_foreign_script("मुझे 2 BHK चाहिए") and not has_foreign_script("મને જોઈએ")

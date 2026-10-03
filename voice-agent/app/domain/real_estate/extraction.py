@@ -15,7 +15,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator
 
 from app.llm.base import Message, TextDelta
 
@@ -51,12 +51,16 @@ class Extraction(BaseModel):
 
     @field_validator("bhk", "questions_asked", "unanswered_questions", mode="before")
     @classmethod
-    def _as_list(cls, value: Any) -> Any:
+    def _as_list(cls, value: Any, info: ValidationInfo) -> Any:
         # The model sometimes answers a one-item list as a bare value, or an empty one as null; one
         # malformed field must not throw away the whole post-call extraction.
         if value is None or value in _EMPTY:
             return []
-        return value if isinstance(value, list) else [value]
+        items = value if isinstance(value, list) else [value]
+        if info.field_name == "bhk":
+            # "2-3", "2 or 3", "3 BHK": the configurations as integers.
+            return [int(n) for item in items for n in re.findall(r"\d+", str(item))]
+        return items
 
 
 SCHEMA_HINT = json.dumps({

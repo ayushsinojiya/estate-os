@@ -18,3 +18,8 @@ def test_one_bad_list_field_does_not_lose_the_rest():
     e = Extraction.model_validate({"summary": "Wants a 2 BHK in Wakad.", "questions_asked": "price?",
                                    "budget_max_inr": 9000000})
     assert e.summary == "Wants a 2 BHK in Wakad." and e.budget_max_inr == 9000000
+
+
+def test_bhk_ranges_become_integers():
+    assert Extraction.model_validate({"bhk": "2-3"}).bhk == [2, 3]
+    assert Extraction.model_validate({"bhk": ["2 or 3 BHK"]}).bhk == [2, 3]

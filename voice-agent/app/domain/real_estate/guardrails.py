@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .money import CRORE, LAKH, amounts_in
+from .money import _DEV_DIGITS, CRORE, LAKH, amounts_in
 
 _DNC = re.compile(
     r"(do\s*n[o']?t\s+call|don'?t\s+call|stop\s+calling|never\s+call|remove\s+my\s+number|"
@@ -50,6 +50,23 @@ def escalation_topic(text: str) -> str | None:
     return None
 
 
+# A sentence that states an area. Its figures must be ones a tool returned in this call.
+_AREA_UNIT = re.compile(r"(sq\.?\s*f(?:ee)?t|sqft|square\s*f(?:ee|oo)t|carpet|built[\s-]*up|super\s*built|"
+                        r"वर्ग\s*फ़?फु?ट|स्क्वेयर\s*फ़?फीट|स्क्वायर\s*फ़?फीट|चौरस\s*फूट|ચોરસ\s*ફૂટ|સ્ક્વેર\s*ફૂટ)", re.I)
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def numbers_in(text: str) -> set[int]:
+    """Every whole number written in the text (digits, with Indian or Western grouping)."""
+    out: set[int] = set()
+    for token in _NUMBER.findall((text or "").translate(_DEV_DIGITS)):
+        try:
+            out.add(int(float(token.replace(",", ""))))
+        except ValueError:
+            continue
+    return out
+
+
 class PriceGuard:
     """Only rupee amounts that came from this call's tool results (or the caller) may be spoken.
 
@@ -61,9 +78,12 @@ class PriceGuard:
 
     def __init__(self) -> None:
         self.evidence: set[int] = set()
+        # Every number seen in tool results (and the caller's words): the evidence for areas.
+        self.numbers: set[int] = set()
 
     def add_text(self, text: str) -> None:
         self.evidence.update(amounts_in(text))
+        self.numbers.update(numbers_in(text))
 
     def add_result(self, value: Any) -> None:
         def walk(node: Any, key: str = "") -> None:
@@ -76,6 +96,7 @@ class PriceGuard:
             elif isinstance(node, str):
                 self.add_text(node)
             elif isinstance(node, (int, float)) and not isinstance(node, bool):
+                self.numbers.add(int(round(node)))
                 lowered = key.lower()
                 if any(word in lowered for word in ("inr", "price", "amount", "budget", "charge")) and node >= 1:
                     self.evidence.add(int(round(node)))
@@ -93,4 +114,16 @@ class PriceGuard:
         return False
 
     def unsupported(self, sentence: str) -> list[int]:
-        return [a for a in amounts_in(sentence) if not self.supported(a)]
+        return [a for a in amounts_in(sentence) if not self.supported(a)] + self.unsupported_areas(sentence)
+
+    def unsupported_areas(self, sentence: str) -> list[int]:
+        """Figures of 100 or more in a sentence about area that no tool returned in this call.
+
+        The model has stated plausible but invented carpet and built-up areas; an area is only spoken
+        when it came from the CRM or a document returned by a tool.
+        """
+        if not _AREA_UNIT.search(sentence or ""):
+            return []
+        money = set(amounts_in(sentence))
+        return sorted(n for n in numbers_in(sentence)
+                      if n >= 100 and n not in self.numbers and n not in money)

@@ -197,7 +197,8 @@ class RealEstateConversation:
     def screen_reply(self, sentence: str, lang: Lang) -> str:
         unsupported = self.state.guard.unsupported(sentence)
         if unsupported:
-            log.warning("call %s: price guard replaced a sentence quoting %s", self.info.call_id, unsupported)
+            log.warning("call %s: fact guard replaced a sentence quoting unsupported figures %s",
+                        self.info.call_id, unsupported)
             self.state.action("price_guard")
             return self.plugin.phrases.render("expert_confirm", lang)
         return sentence

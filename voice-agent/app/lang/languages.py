@@ -29,6 +29,17 @@ _GU = {
 }
 _GU_ROMAN = {"che", "chhe", "nathi", "mane", "tame", "shu", "kem", "ketla", "ketlu", "joie", "joiye", "kyare", "avtikale"}
 
+# Scripts of languages Riya does not speak (Bengali, Gurmukhi, Odia, Tamil, Telugu, Kannada,
+# Malayalam). The recogniser emits them for mumbles and line noise on Indian calls ("અ ಆ ಸತ್ಯ"); such
+# a transcript is not evidence of what the caller speaks.
+_FOREIGN_SCRIPT = ((0x0980, 0x09FF), (0x0A00, 0x0A7F), (0x0B00, 0x0B7F), (0x0B80, 0x0BFF),
+                   (0x0C00, 0x0C7F), (0x0C80, 0x0CFF), (0x0D00, 0x0D7F))
+
+
+def has_foreign_script(text: str) -> bool:
+    return any(lo <= ord(ch) <= hi for ch in text or "" for lo, hi in _FOREIGN_SCRIPT)
+
+
 _STT_HINT = {"mr-IN": "mr", "hi-IN": "hi", "en-IN": "en", "gu-IN": "gu",
              "mr": "mr", "hi": "hi", "en": "en", "gu": "gu"}
 
@@ -87,7 +98,10 @@ class LanguageTracker:
         hinted = _STT_HINT.get(stt_language or "")
         # The recogniser identified the language and the wording agrees: switch on this turn.
         decisive = hinted is not None and lang == hinted
-        if lang and lang != self.current and (decisive or confidence >= self.switch_confidence):
+        # A one-word reply ("जी", "ok") or a garbled transcript in another script never switches the
+        # call: it once flipped a Hindi call into Gujarati for several turns.
+        substantial = len(tokenize(text)) >= 2 and not has_foreign_script(text)
+        if lang and lang != self.current and substantial and (decisive or confidence >= self.switch_confidence):
             self.current = lang
             self.switches += 1
         if lang:
