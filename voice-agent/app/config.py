@@ -158,8 +158,9 @@ class Settings(BaseSettings):
 
     # ---- Real-estate domain
     workspace_id: str = "ws_demo"
-    # Fallback when the CRM workspace has no builder name of its own.
-    builder_name: str = "XYZ Realty"
+    # The company Riya speaks for. When set it always wins; when blank, the CRM workspace's name is
+    # used (e.g. "Westhaven Realty · Demo" -> "Westhaven Realty").
+    builder_name: str = ""
     # Spoken once in the opening line.
     disclose_ai: bool = True
     disclose_recording: bool = True

@@ -31,13 +31,17 @@ log = logging.getLogger(__name__)
 INGEST = "crm_ingest"
 
 
+# Spoken when neither BUILDER_NAME nor the CRM workspace gives a name.
+FALLBACK_BUILDER = "XYZ Realty"
+
+
 class RealEstatePlugin:
     name = "real_estate"
 
     def __init__(self, services: "EngineServices"):
         self.services = services
         self.settings = s = services.settings
-        self.phrases = RealEstatePhrases(s.builder_name, s.disclose_ai, s.disclose_recording)
+        self.phrases = RealEstatePhrases(s.builder_name or FALLBACK_BUILDER, s.disclose_ai, s.disclose_recording)
         if s.crm_mode == "http":
             self.crm: Any = HttpCrm(s.crm_base_url, s.crm_workspace_id, s.crm_service_email, s.crm_service_password,
                                     refresh_margin_s=s.crm_token_refresh_margin_s,
@@ -62,9 +66,10 @@ class RealEstatePlugin:
     async def start(self) -> None:
         try:
             name = await asyncio.wait_for(self.crm.workspace_name(), 5)
-            if name:
+            # A configured BUILDER_NAME is deliberate; only a blank one defers to the workspace name.
+            if name and not self.settings.builder_name:
                 # "Westhaven Realty · Demo" → "Westhaven Realty"
-                self.phrases.builder_name = name.split("·")[0].strip() or self.settings.builder_name
+                self.phrases.builder_name = name.split("·")[0].strip() or FALLBACK_BUILDER
             self.crm_ok_at = time.time()
         except Exception as exc:  # noqa: BLE001 - the fallback name keeps the agent usable
             log.warning("CRM not reachable at start (%r); speaking as %s", exc, self.phrases.builder_name)

@@ -22,6 +22,9 @@ from app.llm.base import Message, TextDelta
 log = logging.getLogger(__name__)
 
 
+_EMPTY = ("", "null", "unknown", "NA")
+
+
 class Extraction(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -44,7 +47,16 @@ class Extraction(BaseModel):
     @field_validator("*", mode="before")
     @classmethod
     def _empty_is_none(cls, value: Any) -> Any:
-        return None if value in ("", "null", "unknown", "NA") else value
+        return None if value in _EMPTY else value
+
+    @field_validator("bhk", "questions_asked", "unanswered_questions", mode="before")
+    @classmethod
+    def _as_list(cls, value: Any) -> Any:
+        # The model sometimes answers a one-item list as a bare value, or an empty one as null; one
+        # malformed field must not throw away the whole post-call extraction.
+        if value is None or value in _EMPTY:
+            return []
+        return value if isinstance(value, list) else [value]
 
 
 SCHEMA_HINT = json.dumps({
