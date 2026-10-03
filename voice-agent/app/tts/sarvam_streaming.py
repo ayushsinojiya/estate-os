@@ -28,7 +28,7 @@ from app.tts.base import TTSError
 
 log = logging.getLogger(__name__)
 
-LANGUAGE_CODES = {"mr": "mr-IN", "hi": "hi-IN", "en": "en-IN", "gu": "gu-IN"}
+LANGUAGE_CODES = {"mr": "mr-IN", "hi": "hi-IN", "en": "en-IN"}
 
 
 async def _close_quietly(ws: Any) -> None:

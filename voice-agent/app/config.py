@@ -23,8 +23,9 @@ class Settings(BaseSettings):
 
     timezone: str = "Asia/Kolkata"
     # Language a caller is greeted in when the lead's own language is not known yet.
-    default_inbound_language: Literal["mr", "hi", "en", "gu"] = "hi"
-    default_outbound_language: Literal["mr", "hi", "en", "gu"] = "mr"
+    # Riya speaks Hindi, Marathi and English only.
+    default_inbound_language: Literal["mr", "hi", "en"] = "hi"
+    default_outbound_language: Literal["mr", "hi", "en"] = "mr"
     # How sure the detector must be to switch mid-call. Hindi and Marathi overlap heavily, so a
     # real switch often scores just above chance; the STT's own tag can override this.
     language_switch_confidence: float = 0.6

@@ -85,7 +85,10 @@ PLAIN = {
     "SARVAM_STT_MODE": "codemix",
     "SARVAM_STT_LANGUAGE_CODE": "auto",
     "SARVAM_STT_STREAMING_LANGUAGE_CODE": "unknown",
-    "SARVAM_STT_HIGH_VAD_SENSITIVITY": "true",
+    # High sensitivity turned background noise on phone lines into "speech" (and interruptions).
+    "SARVAM_STT_HIGH_VAD_SENSITIVITY": "false",
+    # Speech without recognisable words must last this long to interrupt Riya (noise is shorter).
+    "BARGE_IN_MIN_SPEECH_MS": "600",
     "STT_FLUSH_AFTER_MS": "150",
     "GOOGLE_CLOUD_PROJECT": "",
     "GOOGLE_CLOUD_LOCATION": "asia-south1",

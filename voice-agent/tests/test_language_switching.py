@@ -14,14 +14,14 @@ def test_a_single_word_does_not_switch():
     assert t.observe("હા", "gu-IN") == "hi"
 
 
-def test_a_real_gujarati_sentence_still_switches():
+def test_a_real_marathi_sentence_still_switches():
     t = LanguageTracker("hi")
-    assert t.observe("મને બે બીએચકે જોઈએ છે", "gu-IN") == "gu"
+    assert t.observe("मला दोन बीएचके पाहिजे आहे", "mr-IN") == "mr"
 
 
 def test_foreign_script_detection():
     assert has_foreign_script("ಸತ್ಯ") and has_foreign_script("ਲੱਖ") and has_foreign_script("ଆପଣ")
-    assert not has_foreign_script("मुझे 2 BHK चाहिए") and not has_foreign_script("મને જોઈએ")
+    assert not has_foreign_script("मुझे 2 BHK चाहिए") and has_foreign_script("મને જોઈએ")
 
 
 def test_an_english_word_in_a_hindi_sentence_does_not_switch_to_english():

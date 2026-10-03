@@ -25,7 +25,7 @@ from app.conversation.turn_detection import TurnConfig, TurnDetector
 from app.domain.base import (CallerTurnAction, CallInfo, CallRecord, Conversation, PhraseBook, Tool,
                              ToolOutcome)
 from app.lang.devanagari import to_devanagari_speech
-from app.lang.languages import Lang, LanguageTracker
+from app.lang.languages import Lang, LanguageTracker, is_noise
 from app.lang.redaction import redact
 from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady
 from app.llm.router import AllProvidersFailed, LLMRoute, LLMRouter
@@ -364,6 +364,12 @@ class CallSession:
                 continue
             text = (turn.text or "").strip()
             if not text:
+                continue
+            if is_noise(text):
+                # Background noise, not the caller: no reply ("sorry, I didn't catch that" to a cough
+                # sounds distracted). The silence prompt still covers a caller who has gone quiet.
+                log.info("call %s: ignored a noise transcript (%d chars)", self.info.call_id, len(text))
+                self.silence.arm()
                 continue
             lang = self.lang.observe(text, turn.language)
             self.transcript.append({"speaker": "caller", "text": redact(text, self.deps.sensitive)})

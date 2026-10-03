@@ -35,8 +35,9 @@ GOALS = {
                "Read critical values back once and record the outcome with save_requirements(readback=…).",
     "RECOMMEND": "Use search_properties (or get_price for a named project) and recommend at most two options "
                  "that are available, in their budget.",
-    "VISIT": "Offer a site visit: get_visit_slots, offer two or three times, book the one they pick with "
-             "book_site_visit, then confirm project, day, time and the agent's name aloud.",
+    "VISIT": "Offer a site visit once: get_visit_slots, offer two or three times, book the one they pick with "
+             "book_site_visit, then confirm project, day, time and the agent's name aloud. If they want details "
+             "first, give them; do not insist.",
     "REMIND": "Remind them of the visit: project, day and time, address and the agent meeting them.",
     "RESOLVE": "Confirm the visit (confirm_visit), or reschedule it (get_visit_slots, then reschedule_visit), "
                "or cancel it (ask why, offer a later date, cancel_visit).",
@@ -45,7 +46,21 @@ GOALS = {
 }
 
 
+# Once times are on the table, or the caller wants information first, stop selling the visit.
+VISIT_OFFERED = ("You have already offered visit times. Do not read them again or ask again which one; answer "
+                 "exactly what the caller asks (details, prices, amenities, location). Book with book_site_visit "
+                 "only when they pick a time or ask to visit. If they are not ready, offer the details on WhatsApp "
+                 "or a callback instead.")
+VISIT_DEFERRED = ("The caller wants information before deciding on a visit. Answer their questions fully and "
+                  "do not mention a site visit or times unless they bring it up.")
+
+
 def goal(state: CallState) -> str:
+    if state.stage == "VISIT" and not state.booked_visit:
+        if state.visit_deferred:
+            return VISIT_DEFERRED
+        if state.slots_offered_for:
+            return VISIT_OFFERED
     return GOALS.get((state.call_type, state.stage)) or GOALS.get(state.stage, "")
 
 

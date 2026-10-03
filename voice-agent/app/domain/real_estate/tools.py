@@ -268,6 +268,15 @@ class ToolBox:
         project = self._project(a.project)
         if project is None:
             return self._unknown_project(a.project)
+        if not a.preferred_day and not self.s.wants_visit_now:
+            if self.s.visit_deferred:
+                return ToolOutcome({"project": project["name"], "slots": [],
+                                    "instruction": "The caller wants details first. Do not offer visit times now; "
+                                                   "answer their question."})
+            if project["id"] in self.s.slots_offered_for:
+                return ToolOutcome({"project": project["name"], "alreadyOffered": list(self.s.offered_slots.values()),
+                                    "instruction": "You already offered these times. Do not read them again; answer "
+                                                   "the caller's question and mention the visit only if they ask."})
         wanted = parse_when(a.preferred_day) if a.preferred_day else None
         today = now_ist().date()
         start_day = wanted.date() if wanted and wanted.date() >= today else today
@@ -280,6 +289,8 @@ class ToolBox:
             slots = [slots[0], slots[len(slots) // 2], slots[-1]]
         for slot in slots:
             self.s.offered_slots[slot["start"]] = slot["label"]
+        if slots and project["id"] not in self.s.slots_offered_for:
+            self.s.slots_offered_for.append(project["id"])
         self.s.requirements.project_id = self.s.requirements.project_id or project["id"]
         if not slots:
             return ToolOutcome({"project": project["name"], "slots": [],

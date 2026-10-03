@@ -24,7 +24,7 @@ from app.stt.base import STTEvent
 
 log = logging.getLogger(__name__)
 
-_LANGS = {"mr", "hi", "en", "gu"}
+_LANGS = {"mr", "hi", "en"}
 
 
 def language_of(code: str | None) -> str | None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from app.lang.languages import is_noise
 from app.lang.text import tokenize
 
 BACKCHANNELS = frozenset({
@@ -53,6 +54,8 @@ class BargeInDetector:
         if self.onset is None:
             return BargeIn.NONE
         text = self.text.strip()
+        if text and is_noise(text):
+            text = ""  # background noise transcribed as a stray sound: judge it on duration alone
         if text and not is_backchannel(text):
             return BargeIn.INTERRUPT
         if not self.speaking:
