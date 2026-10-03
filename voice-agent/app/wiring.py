@@ -100,10 +100,15 @@ class Container:
                 language_code=s.sarvam_stt_streaming_language_code, mode=s.sarvam_stt_mode,
                 high_vad_sensitivity=s.sarvam_stt_high_vad_sensitivity)
 
-        def fallback():
-            return DeepgramSTT(s.deepgram_api_key, language=language)
+        def deepgram():
+            # Nova-3 has no Hindi-only streaming model worth using on calls; its multilingual mode
+            # handles Hindi with English mixed in. Marathi and English are monolingual.
+            code = {"hi": "multi", "mr": "mr", "en": "en"}.get(language, "multi")
+            return DeepgramSTT(s.deepgram_api_key, s.deepgram_model, language=code)
 
-        return primary, fallback
+        if s.stt_primary == "deepgram" and s.deepgram_api_key:
+            return deepgram, primary
+        return primary, deepgram
 
     def new_tts(self) -> FailoverTTS:
         s = self.settings

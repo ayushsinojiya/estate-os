@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     tts_primary: Literal["sarvam_streaming", "rumik"] = "sarvam_streaming"
 
     # Deepgram
+    # Primary STT: sarvam (Saaras v3 streaming, Deepgram as fallback) or deepgram (Nova-3, Sarvam as fallback).
+    stt_primary: Literal["sarvam", "deepgram"] = "sarvam"
     deepgram_api_key: str = ""
     deepgram_model: str = "nova-3"
 
@@ -243,13 +245,12 @@ class Settings(BaseSettings):
         return max(1, int(self.sarvam_llm_rate_limit_per_min * self.governor_safety_fraction))
 
 
-@lru_cache
-
 def cost_prices(s: "Settings"):
     from app.observability.cost import Prices
     return Prices(s.cost_stt_per_hour, s.cost_tts_per_1k_chars, s.cost_llm_input_per_m,
                   s.cost_llm_cached_per_m, s.cost_llm_output_per_m, s.cost_currency)
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

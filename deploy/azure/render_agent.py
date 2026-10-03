@@ -76,6 +76,8 @@ PLAIN = {
     # Which TTS engine actually speaks. The code default is sarvam_streaming, so leaving this
     # unset silently swaps the voice for a different engine than the one tuned locally.
     "TTS_PRIMARY": "sarvam_streaming",
+    # Which STT listens: sarvam (default) or deepgram.
+    "STT_PRIMARY": "sarvam",
     "SARVAM_TTS_MODEL": "bulbul:v3",
     "SARVAM_TTS_PACE": "1.0",
     # Speech recognition tuning.
