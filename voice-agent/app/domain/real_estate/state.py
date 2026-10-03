@@ -80,6 +80,8 @@ class CallState:
     asked_to_book: bool = False
     # The caller's latest turn asked about a visit (reset every turn).
     wants_visit_now: bool = False
+    # Riya's last reply asked whether they would like to visit.
+    visit_question_asked: bool = False
     # The caller wants details first / not now: no visit offers until they bring it up.
     visit_deferred: bool = False
     # Projects whose visit times were already offered in this call.

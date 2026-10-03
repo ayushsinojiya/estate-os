@@ -157,7 +157,9 @@ class ToolBox:
                                        "instruction": "Apologise briefly and say our team will confirm."})
             self.s.tool_log.append({"tool": name, "args": arguments,
                                     "result": {k: v for k, v in outcome.content.items() if k != "chunks"}})
-            self.s.guard.add_result(outcome.content)
+            # Prices come from the CRM only: a brochure's figures may support an area or a count,
+            # never a rupee amount (a document's "Type A ₹92 lakh" was once quoted for the wrong project).
+            self.s.guard.add_result(outcome.content, prices=name != "ask_knowledge")
             self.c.advance()
             return outcome
 
@@ -268,7 +270,14 @@ class ToolBox:
         project = self._project(a.project)
         if project is None:
             return self._unknown_project(a.project)
-        if not a.preferred_day and not self.s.wants_visit_now:
+        about_existing_visit = self.s.call_type == "VISIT_REMINDER" or bool(self.s.context.get("visit"))
+        if not a.preferred_day and not self.s.wants_visit_now and not about_existing_visit:
+            if not self.s.slots_offered_for:
+                # "Show me the Baner one" asks about the project, not for a visit.
+                return ToolOutcome({"project": project["name"], "slots": [],
+                                    "instruction": "The caller has not asked for a visit. Answer what they asked; "
+                                                   "you may then ask once whether they would like to visit, and call "
+                                                   "get_visit_slots only after they say yes."})
             if self.s.visit_deferred:
                 return ToolOutcome({"project": project["name"], "slots": [],
                                     "instruction": "The caller wants details first. Do not offer visit times now; "

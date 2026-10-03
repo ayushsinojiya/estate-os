@@ -31,3 +31,10 @@ def test_what_jeel_said_is_recognised_as_details_first():
                  "अभी नहीं, बाद में", "first tell me the price"):
         assert _DEFER.search(said), said
     assert _BOOKING.search("site visit book कर दो")
+
+
+def test_a_yes_to_rias_visit_question_counts_as_asking_for_a_visit():
+    from app.domain.real_estate.conversation import _VISIT_QUESTION, _YES
+    assert _VISIT_QUESTION.search("क्या आप site visit करना चाहेंगे?")
+    assert _YES.search("हां जी कर दीजिए") and _YES.search("ok") and not _YES.search("नहीं, पहले details")
+    assert not _VISIT_QUESTION.search("Greenleaf में clubhouse और gym है।")

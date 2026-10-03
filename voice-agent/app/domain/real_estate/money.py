@@ -62,3 +62,73 @@ def amounts_in(text: str) -> list[int]:
                 continue
             taken.append((match.start(), match.end()))
     return found
+
+
+# ---- the caller's own figures, as they are spoken ("साठ से अस्सी लाख", "sixty to eighty lakh")
+
+_EN_UNITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
+             "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+_EN_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+_FRACTIONS = {"डेढ़": 1.5, "डेढ": 1.5, "दीड": 1.5, "ढाई": 2.5, "अडीच": 2.5}
+_HALF_PLUS = ("साढ़े", "साढे", "साडे", "साडेत")
+
+
+def _word_values() -> dict[str, int]:
+    from app.lang.spoken import HI_0_99, MR_0_99
+    values: dict[str, int] = {}
+    for table in (HI_0_99, MR_0_99):
+        for n, word in enumerate(table):
+            values.setdefault(word, n)
+    for n, word in enumerate(_EN_UNITS):
+        values[word] = n
+    for t, tens in enumerate(_EN_TENS):
+        if tens:
+            values[tens] = t * 10
+    # Common alternative spellings heard from speech recognition.
+    values.update({"पांच": 5, "छः": 6, "छे": 6, "सौ": 100, "hundred": 100})
+    return values
+
+
+_WORDS: dict[str, int] | None = None
+
+
+def words_to_digits(text: str) -> str:
+    """Number words to digits: "साठ से अस्सी लाख" -> "60 से 80 लाख", "seventy six" -> "76",
+    "डेढ़ करोड़" -> "1.5 करोड़", "साढ़े आठ लाख" -> "8.5 लाख". Other words are left alone."""
+    global _WORDS
+    if _WORDS is None:
+        _WORDS = _word_values()
+    out: list[str] = []
+    half = False
+    for token in (text or "").split():
+        word = token.strip(".,?!।").lower()
+        if word in _HALF_PLUS:
+            half = True
+            continue
+        if word in _FRACTIONS:
+            out.append(_trim(_FRACTIONS[word]))
+        elif word in _WORDS:
+            value = _WORDS[word]
+            # "seventy six": an English tens word followed by a unit word is one number.
+            if out and value < 10 and word in _EN_UNITS and out[-1].isdigit() and int(out[-1]) % 10 == 0 \
+                    and 20 <= int(out[-1]) <= 90:
+                value += int(out.pop())
+            out.append(_trim(value + 0.5) if half else str(value))
+        else:
+            out.append(token)
+        half = False
+    return " ".join(out)
+
+
+# One stray word is allowed between the two figures: speech recognition keeps stumbles ("60 से अठ्ठे 80 लाख").
+_RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:से|ते|to|-|–|or|या)\s*(?:[^\d\s]+\s+)?(\d+(?:\.\d+)?)\s*"
+                    r"(lakhs?|लाख|crores?|करोड़|कोटी)", re.I)
+
+
+def caller_amounts(text: str) -> list[int]:
+    """Every amount the caller said, words included, with both ends of a range ("60 से 80 लाख")."""
+    digits = words_to_digits(text)
+    found = amounts_in(digits)
+    for low, _high, unit in _RANGE.findall(digits.translate(_DEV_DIGITS)):
+        found.extend(amounts_in(f"{low} {unit}"))
+    return found
