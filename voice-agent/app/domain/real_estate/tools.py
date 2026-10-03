@@ -273,11 +273,13 @@ class ToolBox:
         about_existing_visit = self.s.call_type == "VISIT_REMINDER" or bool(self.s.context.get("visit"))
         if not a.preferred_day and not self.s.wants_visit_now and not about_existing_visit:
             if not self.s.slots_offered_for:
-                # "Show me the Baner one" asks about the project, not for a visit.
-                return ToolOutcome({"project": project["name"], "slots": [],
-                                    "instruction": "The caller has not asked for a visit. Answer what they asked; "
-                                                   "you may then ask once whether they would like to visit, and call "
-                                                   "get_visit_slots only after they say yes."})
+                # "Show me the Baner one" asks about the project, not for a visit. No "slots" key: an empty
+                # list was once read out as "no slots are available".
+                return ToolOutcome({"project": project["name"], "visitTimesLookedUp": False,
+                                    "instruction": "Visit times exist but were not looked up, because the caller has "
+                                                   "not asked for a visit. Never say no slots are available. Answer "
+                                                   "what they asked, then ask once whether they would like to visit; "
+                                                   "call get_visit_slots after they say yes."})
             if self.s.visit_deferred:
                 return ToolOutcome({"project": project["name"], "slots": [],
                                     "instruction": "The caller wants details first. Do not offer visit times now; "

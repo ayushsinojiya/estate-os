@@ -49,5 +49,6 @@ def test_show_me_a_project_does_not_fetch_visit_times():
     box, state = _toolbox()
     state.wants_visit_now = False  # "Baner वाले में दिखाइए": about the project, not a visit
     refused = asyncio.run(box.get_visit_slots(SlotArgs(project="Sahyadri Grove"))).content
-    assert refused["slots"] == [] and "has not asked for a visit" in refused["instruction"]
+    assert "slots" not in refused and refused["visitTimesLookedUp"] is False
+    assert "Never say no slots are available" in refused["instruction"]
     assert state.offered_slots == {}
