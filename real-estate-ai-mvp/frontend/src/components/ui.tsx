@@ -23,7 +23,7 @@ export function Badge({ value }: { value: unknown }) {
   const s = String(value || "UNKNOWN");
   return (
     <span
-      className={`badge ${/ACTIVE|AVAILABLE|QUALIFIED|COMPLETED|PUBLISHED|CONFIRMED|ACCEPTED|DELIVERED|SUCCESS/.test(s) ? "badge-green" : /FAILED|LOST|CANCELLED|SOLD|ERROR/.test(s) ? "badge-red" : /PENDING|RESERVED|REQUESTED|PROCESSING|NEW/.test(s) ? "badge-amber" : "badge-neutral"}`}
+      className={`badge ${/ACTIVE|AVAILABLE|QUALIFIED|COMPLETED|PUBLISHED|CONFIRMED|ACCEPTED|DELIVERED|SUCCESS|DONE|SENT|READ/.test(s) ? "badge-green" : /FAILED|LOST|CANCELLED|SOLD|ERROR|REJECTED|DO_NOT_CALL|HOT/.test(s) ? "badge-red" : /PENDING|RESERVED|REQUESTED|PROCESSING|NEW|UPLOADED|PARSING|EMBEDDING|SCHEDULED|DIALING|REVIEW|CHECK_PAGES|WARM/.test(s) ? "badge-amber" : "badge-neutral"}`}
     >
       {label(value)}
     </span>

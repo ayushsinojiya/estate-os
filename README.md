@@ -4,7 +4,7 @@ Two services that were built separately and are now connected.
 
 | | Path | Stack |
 | --- | --- | --- |
-| **Voice agent** ("Riya") | `last try/real-estate-voice-agent` | Python, FastAPI, VoiceLink telephony |
+| **Voice agent** ("Riya") | `voice-agent` | Python, FastAPI, VoiceLink telephony |
 | **CRM** (EstraOS) | `real-estate-ai-mvp` | Java 21 / Spring Boot, PostgreSQL, React |
 
 ## How they talk
@@ -41,7 +41,7 @@ cd real-estate-ai-mvp/backend && cp .env.example .env   # fill in, then export
 mvn spring-boot:run
 
 # Voice agent
-cd "last try/real-estate-voice-agent"
+cd voice-agent
 cp .env.example .env            # set CRM_MODE=http and the CRM_SERVICE_* values
 uvicorn app.main:app --port 8081
 ```
@@ -60,7 +60,7 @@ Azure Container Apps, one command: [`deploy/azure/README.md`](deploy/azure/READM
 ## Tests
 
 ```bash
-cd "last try/real-estate-voice-agent" && .venv/bin/python -m pytest      # 206 tests
+cd voice-agent && .venv/bin/python -m pytest
 cd real-estate-ai-mvp/backend && mvn test                               # needs Docker for Testcontainers
 ```
 

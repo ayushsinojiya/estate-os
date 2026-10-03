@@ -11,6 +11,7 @@ import {
   Pagination,
 } from "../components/ui";
 import { date, label, list } from "../utils/format";
+import { CallOutcome } from "../features/voice";
 export function Calls() {
   const l = useList("/calls");
   return (
@@ -141,6 +142,7 @@ export function CallDetail() {
               <h2 className="mb-5">Conversation summary</h2>
               <RichContent value={d.summary} />
             </section>
+            <CallOutcome call={d} />
             <section className="panel p-6">
               <h2 className="mb-5">Transcript</h2>
               <RichContent value={d.transcript} />

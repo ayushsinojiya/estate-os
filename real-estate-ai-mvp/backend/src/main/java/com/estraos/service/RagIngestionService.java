@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
@@ -19,27 +21,43 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
-/** Authenticated CRM boundary; the Python service owns source storage and ingestion state. */
+/**
+ * Authenticated proxy to the knowledge service's source management (/api/v1/knowledge/*). The
+ * Python service owns source storage and ingestion state; this API checks workspace membership and
+ * role first, then forwards with the shared RAG_SERVICE_TOKEN.
+ *
+ * <p>A source that belongs to a project document (it carries {@code crmDocumentId}) is kept in step
+ * with that document after a swap, delete, publish or unpublish (see {@link KnowledgeSourceLinks}).
+ */
 @Service
 public class RagIngestionService {
+  private static final Logger log = LoggerFactory.getLogger(RagIngestionService.class);
   private final TenantContext tenant;
   private final RestClient client;
   private final String token;
+  private final KnowledgeSourceLinks links;
 
   @Autowired
   public RagIngestionService(
       TenantContext tenant,
-      @Value("${app.ingestion.url:http://localhost:8090}") String url,
-      @Value("${app.ingestion.token:}") String token,
-      @Value("${app.ingestion.connect-timeout-ms:3000}") int connectTimeout,
-      @Value("${app.ingestion.read-timeout-ms:60000}") int readTimeout) {
-    this(tenant, buildClient(url, connectTimeout, readTimeout), token);
+      KnowledgeSourceLinks links,
+      @Value("${app.integrations.rag.url:}") String url,
+      @Value("${app.integrations.rag.api-key:}") String token,
+      @Value("${app.integrations.connect-timeout-ms:3000}") int connectTimeout,
+      @Value("${app.knowledge.upload-timeout-ms:60000}") int readTimeout) {
+    this(tenant, buildClient(url.isBlank() ? "http://localhost:8090" : url, connectTimeout, readTimeout),
+        url.isBlank() ? "" : token, links);
   }
 
   RagIngestionService(TenantContext tenant, RestClient client, String token) {
+    this(tenant, client, token, null);
+  }
+
+  RagIngestionService(TenantContext tenant, RestClient client, String token, KnowledgeSourceLinks links) {
     this.tenant = tenant;
     this.client = client;
     this.token = token;
+    this.links = links;
   }
 
   private static RestClient buildClient(String url, int connectTimeout, int readTimeout) {
@@ -75,7 +93,15 @@ public class RagIngestionService {
     tenant.manage(workspace);
     if (files == null || files.size() != 1)
       throw ApiException.bad("Choose exactly one replacement file");
-    return request(HttpMethod.POST, source(workspace, id) + "/replace", parts(files));
+    Long document = linkedDocument(workspace, id);
+    // The project document will hold this file too, so it must be one the CRM can store.
+    if (document != null) links.validate(files.getFirst());
+    var result = request(HttpMethod.POST, source(workspace, id) + "/replace", parts(files));
+    if (document != null) {
+      String status = result.path("results").path(0).path("status").asText("UPLOADED");
+      keepInStep("replace", document, () -> links.replaced(workspace, document, files.getFirst(), status));
+    }
+    return result;
   }
 
   public JsonNode retry(Long workspace, String id) {
@@ -85,7 +111,46 @@ public class RagIngestionService {
 
   public JsonNode delete(Long workspace, String id) {
     tenant.manage(workspace);
-    return request(HttpMethod.DELETE, source(workspace, id), null);
+    Long document = linkedDocument(workspace, id); // read first: a deleted source has no details
+    var result = request(HttpMethod.DELETE, source(workspace, id), null);
+    if (document != null) keepInStep("delete", document, () -> links.deleted(workspace, document));
+    return result;
+  }
+
+  public JsonNode publish(Long workspace, String id, boolean publish) {
+    tenant.manage(workspace);
+    var result = request(HttpMethod.POST, source(workspace, id) + (publish ? "/publish" : "/unpublish"), null);
+    Long document = crmDocument(result);
+    if (document != null) {
+      String status = result.path("status").asText(publish ? "PUBLISHED" : "UNPUBLISHED");
+      keepInStep(publish ? "publish" : "unpublish", document,
+          () -> links.published(workspace, document, publish, status));
+    }
+    return result;
+  }
+
+  /** The project document a source belongs to, or null for a workspace-wide source. */
+  private Long linkedDocument(Long workspace, String id) {
+    return links == null ? null : crmDocument(request(HttpMethod.GET, source(workspace, id), null));
+  }
+
+  private Long crmDocument(JsonNode source) {
+    if (links == null || source == null) return null;
+    String value = source.path("crmDocumentId").asText("");
+    return value.matches("\\d{1,18}") ? Long.valueOf(value) : null;
+  }
+
+  /**
+   * The knowledge service has already acted (the voice agent answers from it), so a failure to
+   * update the CRM document is logged rather than reported as a failed delete or swap.
+   */
+  private void keepInStep(String action, Long document, Runnable update) {
+    try {
+      update.run();
+    } catch (RuntimeException e) {
+      log.error("Knowledge source {} done, but project document {} was not updated: {}",
+          action, document, e.getMessage());
+    }
   }
 
   private String root(Long workspace) {
@@ -113,7 +178,7 @@ public class RagIngestionService {
   private JsonNode request(HttpMethod method, String path, Object body) {
     if (token == null || token.isBlank())
       throw new ApiException(503, "INGESTION_NOT_CONFIGURED",
-          "Knowledge ingestion is not configured. Set RAG_INGESTION_TOKEN on the CRM and ingestion services.");
+          "Knowledge ingestion is not configured. Set RAG_SERVICE_URL and RAG_SERVICE_TOKEN on the CRM and the same RAG_SERVICE_TOKEN on the knowledge service.");
     try {
       // URI builder input is already encoded; expand through a URI to avoid double encoding.
       var request = client.method(method).uri(builder -> builder.build().resolve(path)).headers(headers -> {

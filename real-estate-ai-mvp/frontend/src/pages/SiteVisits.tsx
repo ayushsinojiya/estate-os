@@ -28,6 +28,8 @@ import {
   availableUnitOptions,
 } from "../features/fields";
 import { EntityName } from "../components/AsyncSelect";
+import { CustomSelect } from "../components/CustomSelect";
+import { VisitBadges, VisitingHours } from "../features/voice";
 import { write } from "../api/client";
 import { queryClient } from "../services/query";
 import { date, list } from "../utils/format";
@@ -104,6 +106,9 @@ export function SiteVisits() {
   const toast = useToast();
   const name = (items: Entity[], id: string) =>
     items.find((x) => x.id === id)?.name || "Not assigned";
+  const projects = useApi("/projects?size=100&sort=name,asc");
+  const [hoursProject, setHoursProject] = useState("");
+  const selectedProject = hoursProject || list(projects.data)[0]?.id || "";
   return (
     <>
       <PageHeader
@@ -178,6 +183,7 @@ export function SiteVisits() {
                       {v.agentName || name(o.members, v.agentId)}
                     </small>
                   </div>
+                  <VisitBadges visit={v} />
                   <Badge value={v.status} />
                   <CalendarDays size={19} className="text-muted" />
                 </Link>
@@ -226,13 +232,37 @@ export function SiteVisits() {
                 {
                   key: "status",
                   label: "Status",
-                  render: (v) => <Badge value={v.status} />,
+                  render: (v) => (
+                    <span className="flex gap-1 flex-wrap">
+                      <Badge value={v.status} />
+                      <VisitBadges visit={v} />
+                    </span>
+                  ),
                 },
               ]}
             />
           )}
           <Pagination data={l.query.data} page={l.page} setPage={l.setPage} />
         </Async>
+      </section>
+      <section className="panel p-6 mt-6">
+        <div className="flex justify-between items-center flex-wrap gap-3 mb-4">
+          <h2>Visiting hours</h2>
+          <div className="min-w-64">
+            <CustomSelect
+              id="visiting-hours-project"
+              label="Visiting hours for project"
+              value={selectedProject}
+              onChange={setHoursProject}
+              options={list(projects.data).map((project: Entity) => ({ value: project.id, label: project.name }))}
+            />
+          </div>
+        </div>
+        {selectedProject ? (
+          <VisitingHours key={selectedProject} projectId={selectedProject} />
+        ) : (
+          <p className="text-muted">Add a project to set its visiting hours.</p>
+        )}
       </section>
       {create && (
         <Modal title="Book a site visit" onClose={() => setCreate(false)}>
@@ -279,6 +309,7 @@ export function SiteVisitDetail() {
       <Async query={q}>
         <div className="summary-strip">
           <Badge value={d.status} />
+          <VisitBadges visit={d} />
           <span>{d.durationMinutes} minutes</span>
           <span>
             Customer confirmation: <Badge value={d.confirmationStatus} />

@@ -1,0 +1,4 @@
+# Local cross-encoder reranker (RERANKER=bge). CPU-only torch keeps the image small.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.3
+sentence-transformers>=3.0

@@ -84,7 +84,7 @@ class RagIngestionServiceTest {
     ingestion = new RagIngestionService(tenant, client, " ");
     var error = assertThrows(ApiException.class, () -> ingestion.details(7L, ID));
     assertEquals(503, error.status);
-    assertTrue(error.getMessage().contains("RAG_INGESTION_TOKEN"));
+    assertTrue(error.getMessage().contains("RAG_SERVICE_TOKEN"));
     server.verify();
   }
 
@@ -119,6 +119,98 @@ class RagIngestionServiceTest {
         .andExpect(content().string(org.hamcrest.Matchers.containsString("filename=\"renamed.csv\"")))
         .andRespond(withSuccess("{\"results\":[]}", MediaType.APPLICATION_JSON));
     ingestion.replace(7L, ID, List.of(new MockMultipartFile("files", "renamed.csv", "text/csv", "name".getBytes(StandardCharsets.UTF_8))));
+    server.verify();
+  }
+
+  // ---- a source that belongs to a project document is kept in step with it
+
+  private static final String LINKED = "{\"id\":\"" + ID + "\",\"crmDocumentId\":\"55\",\"status\":\"PUBLISHED\"}";
+  private static final String STANDALONE = "{\"id\":\"" + ID + "\",\"crmDocumentId\":null,\"status\":\"PUBLISHED\"}";
+
+  private KnowledgeSourceLinks linked() {
+    var links = mock(KnowledgeSourceLinks.class);
+    ingestion = new RagIngestionService(tenant, client, "private-service-token", links);
+    return links;
+  }
+
+  private void expectDetails(String body) {
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID))
+        .andExpect(method(HttpMethod.GET))
+        .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+  }
+
+  @Test
+  void deletingAProjectDocumentsSourceAlsoRetiresTheDocument() {
+    var links = linked();
+    expectDetails(LINKED);
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID))
+        .andExpect(method(HttpMethod.DELETE))
+        .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
+            .body("{\"id\":\"" + ID + "\",\"status\":\"DELETED\"}"));
+    assertEquals("DELETED", ingestion.delete(7L, ID).get("status").asText());
+    verify(links).deleted(7L, 55L);
+    server.verify();
+  }
+
+  @Test
+  void deletingAWorkspaceSourceTouchesNoDocument() {
+    var links = linked();
+    expectDetails(STANDALONE);
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID))
+        .andExpect(method(HttpMethod.DELETE))
+        .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON).body("{}"));
+    ingestion.delete(7L, ID);
+    verifyNoInteractions(links);
+    server.verify();
+  }
+
+  @Test
+  void swappingAProjectDocumentsSourceStoresTheNewFileOnTheDocument() {
+    var links = linked();
+    var file = new MockMultipartFile("files", "brochure.pdf", "application/pdf", "%PDF-1.7 v2".getBytes(StandardCharsets.UTF_8));
+    expectDetails(LINKED);
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID + "/replace"))
+        .andExpect(method(HttpMethod.POST))
+        .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
+            .body("{\"results\":[{\"id\":\"" + ID + "\",\"status\":\"UPLOADED\",\"version\":2}]}"));
+    ingestion.replace(7L, ID, List.of(file));
+    var order = inOrder(links);
+    order.verify(links).validate(file); // checked before the knowledge service is touched
+    order.verify(links).replaced(7L, 55L, file, "UPLOADED");
+    server.verify();
+  }
+
+  @Test
+  void aRejectedSwapLeavesTheDocumentAlone() {
+    var links = linked();
+    var file = new MockMultipartFile("files", "brochure.pdf", "application/pdf", "%PDF-1.7".getBytes(StandardCharsets.UTF_8));
+    expectDetails(LINKED);
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID + "/replace"))
+        .andRespond(withStatus(HttpStatus.CONFLICT));
+    assertEquals(409, assertThrows(ApiException.class, () -> ingestion.replace(7L, ID, List.of(file))).status);
+    verify(links, never()).replaced(any(), any(), any(), any());
+    server.verify();
+  }
+
+  @Test
+  void unpublishingFromFileManagementUnpublishesTheDocument() {
+    var links = linked();
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID + "/unpublish"))
+        .andRespond(withSuccess(LINKED.replace("PUBLISHED", "UNPUBLISHED"), MediaType.APPLICATION_JSON));
+    ingestion.publish(7L, ID, false);
+    verify(links).published(7L, 55L, false, "UNPUBLISHED");
+    server.verify();
+  }
+
+  @Test
+  void aFailedDocumentUpdateDoesNotUndoTheDelete() {
+    var links = linked();
+    doThrow(new IllegalStateException("db down")).when(links).deleted(7L, 55L);
+    expectDetails(LINKED);
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources/" + ID))
+        .andExpect(method(HttpMethod.DELETE))
+        .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON).body("{\"status\":\"DELETED\"}"));
+    assertEquals("DELETED", ingestion.delete(7L, ID).get("status").asText());
     server.verify();
   }
 }

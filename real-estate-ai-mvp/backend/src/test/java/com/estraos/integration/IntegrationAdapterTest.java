@@ -62,6 +62,70 @@ class IntegrationAdapterTest {
         assertThat(path.get()).isEqualTo("/v1/content/unpublish");
     }
 
+    @Test void ragSourceUploadIsMultipartWithScopedMetadata() throws IOException {
+        RestRagServiceClient rag = new RestRagServiceClient(server(202,
+            "{\"results\":[{\"id\":\"6b2a8f0e-2c5a-4a8e-9a55-0f6a8d2f3c11\",\"status\":\"UPLOADED\"}]}", 0, 2000));
+        Map<String, Object> request = new HashMap<>(Map.of("workspaceId", WORKSPACE, "projectId", PROJECT,
+            "crmDocumentId", DOCUMENT, "projectName", "Sahyadri Grove", "language", "mr"));
+        Map<String, Object> result = rag.uploadSource(request, "brochure.pdf", "application/pdf", "%PDF-1.7".getBytes());
+        assertThat(path.get()).isEqualTo("/v1/workspaces/" + WORKSPACE + "/sources");
+        assertThat(auth.get()).isEqualTo("Bearer test-only-key");
+        assertThat(body.get()).contains("name=\"crmDocumentId\"", "Sahyadri Grove", "filename=\"brochure.pdf\"", "%PDF-1.7");
+        assertThat(result).containsEntry("status", "UPLOADED").containsEntry("mock", false);
+        assertThatThrownBy(() -> rag.uploadSource(Map.of("workspaceId", WORKSPACE, "crmDocumentId", "-4"), "x.pdf", "application/pdf", new byte[1]))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void ragSourceStatusMustComeFromTheSameWorkspace() throws IOException {
+        RestRagServiceClient rag = new RestRagServiceClient(server(200,
+            "{\"status\":\"PUBLISHED\",\"workspaceId\":\"" + OTHER + "\"}", 0, 2000));
+        assertThatThrownBy(() -> rag.getSource(Map.of("workspaceId", WORKSPACE, "sourceId", "6b2a8f0e-2c5a-4a8e-9a55-0f6a8d2f3c11")))
+            .isInstanceOf(ExternalServiceException.class);
+        assertThatThrownBy(() -> rag.getSource(Map.of("workspaceId", WORKSPACE, "sourceId", "../etc")))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void ragIsRealWheneverItsUrlIsConfiguredEvenInMockMode() {
+        MockEnvironment env = new MockEnvironment().withProperty("app.integrations.mode", "mock")
+            .withProperty("app.integrations.rag.url", "http://rag.internal:8090");
+        env.setActiveProfiles("demo");
+        IntegrationConfiguration configuration = new IntegrationConfiguration(env);
+        assertThat(configuration.ragServiceClient()).isInstanceOf(RestRagServiceClient.class);
+        assertThat(configuration.voiceAgentServiceClient()).isInstanceOf(MockVoiceAgentServiceClient.class);
+    }
+
+    @Test void mockRagSimulatesAutomaticPublication() {
+        MockRagServiceClient rag = new MockRagServiceClient();
+        Map<String, Object> uploaded = rag.uploadSource(Map.of("workspaceId", WORKSPACE), "a.pdf", "application/pdf", new byte[3]);
+        assertThat(uploaded).containsEntry("status", "UPLOADED").containsEntry("mock", true);
+        assertThat(rag.getProcessingStatus(document())).containsEntry("status", "PUBLISHED");
+        assertThat(rag.getSource(Map.of("workspaceId", WORKSPACE, "sourceId", uploaded.get("id")))).containsEntry("status", "PUBLISHED");
+    }
+
+    @Test void whatsappSendsApprovedTemplatesOnly() throws IOException {
+        RestWhatsAppClient whatsapp = new RestWhatsAppClient(server(200,
+            "{\"messages\":[{\"id\":\"wamid.ABC\"}]}", 0, 2000), "1234567890");
+        Map<String, Object> result = whatsapp.sendTemplate(new HashMap<>(Map.of("workspaceId", WORKSPACE,
+            "to", "+91 98765 43210", "template", "visit_confirmation", "templateLanguage", "mr",
+            "components", List.of(Map.of("type", "body", "parameters", List.of(Map.of("type", "text", "text", "Asha")))))));
+        assertThat(path.get()).isEqualTo("/1234567890/messages");
+        assertThat(body.get()).contains("\"type\":\"template\"", "\"name\":\"visit_confirmation\"", "\"code\":\"mr\"",
+            "\"to\":\"919876543210\"", "\"messaging_product\":\"whatsapp\"");
+        assertThat(result).containsEntry("messageId", "wamid.ABC").containsEntry("status", "SENT");
+        assertThatThrownBy(() -> whatsapp.sendTemplate(Map.of("workspaceId", WORKSPACE, "to", "123",
+            "template", "x", "templateLanguage", "en"))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void whatsappIsMockedInMockModeAndDisabledWithoutCredentials() {
+        MockEnvironment demo = new MockEnvironment().withProperty("app.integrations.mode", "mock");
+        demo.setActiveProfiles("demo");
+        assertThat(new IntegrationConfiguration(demo).whatsAppClient()).isInstanceOf(MockWhatsAppClient.class);
+        MockEnvironment rest = new MockEnvironment();
+        assertThat(new IntegrationConfiguration(rest).whatsAppClient()).isInstanceOf(DisabledWhatsAppClient.class);
+        assertThatThrownBy(() -> new DisabledWhatsAppClient().sendTemplate(Map.of()))
+            .isInstanceOf(ExternalServiceException.class).hasMessageContaining("not configured");
+    }
+
     @Test void invalidOrDraftScopeNeverReachesProvider() throws IOException {
         RestRagServiceClient rag = new RestRagServiceClient(server(200, "{}", 0, 2000));
         Map<String, Object> draft = document();

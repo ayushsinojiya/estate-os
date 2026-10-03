@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
  * app.service-account.password} are configured.
  */
 @Component
+@org.springframework.core.annotation.Order(2)
 public class ServiceAccountProvisioner implements ApplicationRunner {
   private static final org.slf4j.Logger log =
       org.slf4j.LoggerFactory.getLogger(ServiceAccountProvisioner.class);

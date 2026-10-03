@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, NavLink, useParams } from "react-router-dom";
 import {
   Building2,
@@ -32,7 +32,8 @@ import {
   unitStatuses,
   documentFields,
 } from "../features/fields";
-import { api, write } from "../api/client";
+import { api, upload, write } from "../api/client";
+import { ProjectAgents, useProcessingPoll } from "../features/voice";
 import { queryClient } from "../services/query";
 import { date, list, money, languages } from "../utils/format";
 import type { Entity } from "../types";
@@ -213,6 +214,9 @@ export function ProjectDetail() {
             </section>
           </div>
         )}
+        <div className="mt-6">
+          <ProjectAgents projectId={id} />
+        </div>
       </Async>
       {edit && (
         <Modal title="Edit project" onClose={() => setEdit(false)}>
@@ -456,6 +460,8 @@ export function Units() {
   );
 }
 export function Documents() {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
   const { id = "" } = useParams();
   const p = useApi(`/projects/${id}`);
   const documentList = useList(`/projects/${id}/documents`);
@@ -475,27 +481,56 @@ export function Documents() {
   );
   const toast = useToast();
   const doc = detail.data || selected;
+  useProcessingPoll(list(q.data));
+  async function uploadFiles(files: FileList | null) {
+    const chosen = Array.from(files || []);
+    if (!chosen.length) return;
+    setUploading(true);
+    try {
+      const result = await upload<{ uploadedCount: number; rejectedCount: number; rejected: { filename: string; reason: string }[] }>(
+        `/projects/${id}/documents/upload`, chosen);
+      await queryClient.invalidateQueries();
+      toast(result.rejectedCount
+        ? `${result.uploadedCount} uploaded; ${result.rejected.map((r) => `${r.filename}: ${r.reason}`).join("; ")}`
+        : `${result.uploadedCount} uploaded; indexing and publishing happen automatically`);
+    } catch (error) {
+      setProcessingError(error);
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  }
   return (
     <>
       <PageHeader
         title={p.data?.name || "Property knowledge"}
         back="/projects"
-        description="One source of truth. Original PDFs, editable content, and published knowledge."
+        description="One source of truth. Original files, editable content, and published knowledge."
         action={
           canManage && (
-            <button className="btn-primary" onClick={() => setCreate(true)}>
-              <Plus size={17} />
-              Register PDF
-            </button>
+            <>
+              <button className="btn-primary" disabled={uploading} onClick={() => fileInput.current?.click()}>
+                <Plus size={17} />
+                {uploading ? "Uploading…" : "Upload files"}
+              </button>
+              <button className="btn-secondary" onClick={() => setCreate(true)}>
+                Register document
+              </button>
+            </>
           )
         }
       />
+      <input ref={fileInput} className="sr-only" aria-label="Choose document files" type="file" multiple
+        accept=".pdf,.docx,.pptx,.xls,.xlsx,.csv,.txt,.md,.jpg,.jpeg,.png,.webp"
+        onChange={(event) => void uploadFiles(event.target.files)} />
       <ProjectTabs id={id} />
       <div className="info-strip">
         <FileText size={18} />
         <span>
-          Register a PDF from your storage service. Only published content is
-          available to the knowledge integration.
+          Upload brochures, price sheets, payment plans, FAQs, RERA and legal
+          papers or floor plans (PDF, Word, PowerPoint, Excel, CSV, images; up to
+          50 MB). They are parsed, indexed and published automatically. Prices
+          and availability always come from unit inventory, never from documents.
         </span>
       </div>
       <section className="panel">
@@ -536,7 +571,12 @@ export function Documents() {
               {
                 key: "processingStatus",
                 label: "Processing",
-                render: (d) => <Badge value={d.processingStatus} />,
+                render: (d) => (
+                  <span className="flex gap-1 flex-wrap">
+                    <Badge value={d.processingStatus} />
+                    {list(d.lowConfidencePages).length > 0 && <Badge value="CHECK_PAGES" />}
+                  </span>
+                ),
               },
               {
                 key: "updatedAt",
@@ -650,8 +690,14 @@ export function Documents() {
                     "status",
                     "processingStatus",
                     "processingError",
+                    "docType",
+                    "lowConfidencePages",
+                    "chunkCount",
                   ]}
                 />
+                {list(doc?.warnings).map((warning: string) => (
+                  <p key={warning} className="info-strip mt-3">{warning}</p>
+                ))}
                 <div className="content-reader mt-5">
                   {typeof doc?.content === "string"
                     ? doc.content

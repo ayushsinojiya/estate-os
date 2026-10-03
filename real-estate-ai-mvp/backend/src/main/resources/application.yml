@@ -1,67 +1,94 @@
-#server:
-#  port: ${PORT:8080}
-#  error:
-#    include-message: never
-#spring:
-#  application:
-#    name: estraos-api
-#  datasource:
-#    url: ${DATABASE_URL}
-#    username: ${DATABASE_USERNAME}
-#    password: ${DATABASE_PASSWORD}
-#  jpa:
-#    open-in-view: false
-#    hibernate:
-#      ddl-auto: validate
-#  flyway:
-#    enabled: true
-#  servlet:
-#    multipart:
-#      max-file-size: ${FILE_MAX_FILE_SIZE:50MB}
-#      max-request-size: ${FILE_MAX_REQUEST_SIZE:250MB}
-#  jackson:
-#    deserialization:
-#      fail-on-unknown-properties: true
-#management:
-#  endpoints:
-#    web:
-#      exposure:
-#        include: health,info
-#  endpoint:
-#    health:
-#      show-details: never
-#app:
-#  jwt-secret: ${JWT_SECRET}
-#  token-minutes: ${JWT_TOKEN_MINUTES:60}
-#  cors-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-#  demo-password: ${DEMO_PASSWORD:12345678}
-#  default-country-code: ${DEFAULT_COUNTRY_CODE:91}
-#  documents:
-#    max-file-bytes: ${DOCUMENT_MAX_FILE_BYTES:20971520}
-#  files:
-#    storage-path: ${FILE_STORAGE_PATH:./storage/files}
-#  service-account:
-#    email: ${SERVICE_ACCOUNT_EMAIL:}
-#    password: ${SERVICE_ACCOUNT_PASSWORD:}
-#    workspace-id: ${SERVICE_ACCOUNT_WORKSPACE_ID:0}
-#    workspace-name: ${SERVICE_ACCOUNT_WORKSPACE_NAME:}
-#    admin-emails: ${SERVICE_ACCOUNT_ADMIN_EMAILS:}
-#  integrations:
-#    mode: ${INTEGRATIONS_MODE:rest}
-#    connect-timeout-ms: ${INTEGRATION_CONNECT_TIMEOUT_MS:3000}
-#    read-timeout-ms: ${INTEGRATION_READ_TIMEOUT_MS:10000}
-#    rag:
-#      url: ${RAG_SERVICE_URL:}
-#      api-key: ${RAG_API_KEY:}
-#    voice:
-#      url: ${VOICE_AGENT_SERVICE_URL:}
-#      api-key: ${VOICE_AGENT_API_KEY:}
-#    notification:
-#      url: ${NOTIFICATION_SERVICE_URL:}
-#      api-key: ${NOTIFICATION_API_KEY:}
-#  notifications:
-#    reminders-enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}
-#    reminder-poll-ms: ${NOTIFICATION_REMINDER_POLL_MS:60000}
-#springdoc:
-#  swagger-ui:
-#    path: /swagger-ui.html
+server:
+  port: ${PORT:8080}
+  error:
+    include-message: never
+spring:
+  application:
+    name: estraos-api
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/estra_os}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+  servlet:
+    multipart:
+      max-file-size: ${FILE_MAX_FILE_SIZE:50MB}
+      max-request-size: ${FILE_MAX_REQUEST_SIZE:250MB}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+app:
+  jwt-secret: ${JWT_SECRET:}
+  token-minutes: ${JWT_TOKEN_MINUTES:60}
+  cors-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  demo-password: ${DEMO_PASSWORD:}
+  default-country-code: ${DEFAULT_COUNTRY_CODE:91}
+  documents:
+    max-file-bytes: ${DOCUMENT_MAX_FILE_BYTES:52428800}
+  files:
+    storage-path: ${FILE_STORAGE_PATH:./storage/files}
+  service-account:
+    email: ${SERVICE_ACCOUNT_EMAIL:}
+    password: ${SERVICE_ACCOUNT_PASSWORD:}
+    workspace-id: ${SERVICE_ACCOUNT_WORKSPACE_ID:0}
+    workspace-name: ${SERVICE_ACCOUNT_WORKSPACE_NAME:}
+    admin-emails: ${SERVICE_ACCOUNT_ADMIN_EMAILS:}
+  integrations:
+    # rest is forced for RAG whenever RAG_SERVICE_URL is set; see IntegrationConfiguration.
+    mode: ${INTEGRATIONS_MODE:rest}
+    connect-timeout-ms: ${INTEGRATION_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${INTEGRATION_READ_TIMEOUT_MS:10000}
+    rag:
+      url: ${RAG_SERVICE_URL:}
+      api-key: ${RAG_SERVICE_TOKEN:}
+    voice:
+      url: ${VOICE_AGENT_SERVICE_URL:}
+      api-key: ${VOICE_AGENT_API_KEY:}
+    notification:
+      url: ${NOTIFICATION_SERVICE_URL:}
+      api-key: ${NOTIFICATION_API_KEY:}
+  # Outbound calls placed by the CRM through the voice agent (reminders, callbacks, re-engagement).
+  calls:
+    scheduler-enabled: ${CALL_SCHEDULER_ENABLED:true}
+    poll-ms: ${CALL_SCHEDULER_POLL_MS:60000}
+    window-start: ${CALLING_HOURS_START:09:00}
+    window-end: ${CALLING_HOURS_END:21:00}
+    resume-at: ${CALLING_RESUME_AT:09:30}
+    visit-reminder-time: ${VISIT_REMINDER_TIME:18:00}
+    same-day-hours-before: ${VISIT_REMINDER_SAME_DAY_HOURS:2}
+    reengage-after-days: ${REENGAGE_AFTER_DAYS:7}
+    reengage-max-attempts: ${REENGAGE_MAX_ATTEMPTS:2}
+    daily-attempt-cap: ${DAILY_CALL_ATTEMPT_CAP:2}
+    new-lead-delay-s: ${NEW_LEAD_CALL_DELAY_S:120}
+  visits:
+    min-lead-minutes: ${VISIT_MIN_LEAD_MINUTES:60}
+  whatsapp:
+    phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+    access-token: ${WHATSAPP_ACCESS_TOKEN:}
+    api-version: ${WHATSAPP_API_VERSION:v21.0}
+    template-lang-map: '${WHATSAPP_TEMPLATE_LANG_MAP:{"en":"en","hi":"hi","mr":"mr","gu":"gu"}}'
+    app-secret: ${WHATSAPP_APP_SECRET:}
+    verify-token: ${WHATSAPP_VERIFY_TOKEN:}
+    office-phone: ${WHATSAPP_OFFICE_PHONE:}
+  knowledge:
+    sync-enabled: ${KNOWLEDGE_SYNC_ENABLED:true}
+    sync-poll-ms: ${KNOWLEDGE_SYNC_POLL_MS:30000}
+  notifications:
+    reminders-enabled: ${NOTIFICATION_REMINDERS_ENABLED:true}
+    reminder-poll-ms: ${NOTIFICATION_REMINDER_POLL_MS:60000}
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

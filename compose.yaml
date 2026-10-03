@@ -1,14 +1,22 @@
 name: estraos
 
 x-rag-environment: &rag-environment
-  RAG_DATABASES_JSON: ${RAG_DATABASES_JSON:?Set RAG_DATABASES_JSON in .env}
-  RAG_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set RAG_INGESTION_TOKEN in .env}
-  RAG_STORAGE_PATH: /data/sources
-  RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
-  RAG_EMBEDDING_REVISION: ${RAG_EMBEDDING_REVISION:-614241f622f53c4eeff9890bdc4f31cfecc418b3}
-  RAG_OCR_LANGUAGES: ${RAG_OCR_LANGUAGES:-eng+hin+mar+guj}
+  RAG_DATABASE_URL: ${RAG_DATABASE_URL:?Set RAG_DATABASE_URL in .env}
+  RAG_SERVICE_TOKEN: ${RAG_SERVICE_TOKEN:?Set RAG_SERVICE_TOKEN in .env}
+  RAG_VOICE_TOKEN: ${RAG_VOICE_TOKEN:-}
+  RAG_VOICE_WORKSPACE_ID: ${RAG_VOICE_WORKSPACE_ID:-1}
+  PROVIDER_MODE: ${RAG_PROVIDER_MODE:-live}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  PARSER_MODEL: ${PARSER_MODEL:-gpt-4.1-mini}
+  PARSER_PROVIDER: ${PARSER_PROVIDER:-openai}
   MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
-  MISTRAL_EXTRACTION_MODEL: ${MISTRAL_EXTRACTION_MODEL:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+  RERANKER: ${RERANKER:-bge}
+  COHERE_API_KEY: ${COHERE_API_KEY:-}
+  RERANK_BUDGET_MS: ${RERANK_BUDGET_MS:-150}
+  VOICE_EMBED_BUDGET_MS: ${VOICE_EMBED_BUDGET_MS:-300}
+  REWRITE_ON_VOICE: ${REWRITE_ON_VOICE:-false}
 
 services:
   api:
@@ -26,12 +34,28 @@ services:
       APP_DEFAULT_COUNTRY_CODE: ${DEFAULT_COUNTRY_CODE:-91}
       APP_CORS_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       APP_INTEGRATIONS_MODE: ${INTEGRATIONS_MODE:-mock}
-      APP_INGESTION_URL: http://knowledge-api:8090
-      APP_INGESTION_TOKEN: ${RAG_INGESTION_TOKEN:?Set RAG_INGESTION_TOKEN in .env}
-      APP_INTEGRATIONS_RAG_URL: ${RAG_SERVICE_URL:-}
-      APP_INTEGRATIONS_RAG_API_KEY: ${RAG_API_KEY:-}
-      APP_INTEGRATIONS_VOICE_URL: ${VOICE_AGENT_SERVICE_URL:-}
-      APP_INTEGRATIONS_VOICE_API_KEY: ${VOICE_AGENT_API_KEY:-}
+      # The knowledge service is used for real whenever this URL is set (even in mock mode).
+      APP_INTEGRATIONS_RAG_URL: ${RAG_SERVICE_URL:-http://rag-api:8090}
+      APP_INTEGRATIONS_RAG_API_KEY: ${RAG_SERVICE_TOKEN:?Set RAG_SERVICE_TOKEN in .env}
+      # The voice agent is used for real whenever this URL is set (even in mock mode).
+      APP_INTEGRATIONS_VOICE_URL: ${VOICE_AGENT_SERVICE_URL:-http://voice-agent:8080}
+      APP_INTEGRATIONS_VOICE_API_KEY: ${VOICE_AGENT_API_KEY:?Set VOICE_AGENT_API_KEY in .env}
+      # The voice agent logs in as this account (CRM_SERVICE_* on the agent).
+      SERVICE_ACCOUNT_EMAIL: ${SERVICE_ACCOUNT_EMAIL:-}
+      SERVICE_ACCOUNT_PASSWORD: ${SERVICE_ACCOUNT_PASSWORD:-}
+      SERVICE_ACCOUNT_WORKSPACE_ID: ${SERVICE_ACCOUNT_WORKSPACE_ID:-1}
+      SERVICE_ACCOUNT_WORKSPACE_NAME: ${SERVICE_ACCOUNT_WORKSPACE_NAME:-}
+      SERVICE_ACCOUNT_ADMIN_EMAILS: ${SERVICE_ACCOUNT_ADMIN_EMAILS:-}
+      CALL_SCHEDULER_ENABLED: ${CALL_SCHEDULER_ENABLED:-true}
+      CALLING_HOURS_START: ${CALLING_HOURS_START:-09:00}
+      CALLING_HOURS_END: ${CALLING_HOURS_END:-21:00}
+      VISIT_REMINDER_TIME: ${VISIT_REMINDER_TIME:-18:00}
+      NEW_LEAD_CALL_DELAY_S: ${NEW_LEAD_CALL_DELAY_S:-120}
+      DAILY_CALL_ATTEMPT_CAP: ${DAILY_CALL_ATTEMPT_CAP:-2}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
       APP_INTEGRATIONS_NOTIFICATION_URL: ${NOTIFICATION_SERVICE_URL:-}
       APP_INTEGRATIONS_NOTIFICATION_API_KEY: ${NOTIFICATION_API_KEY:-}
       APP_FILES_STORAGE_PATH: /data/files
@@ -57,36 +81,68 @@ services:
       api:
         condition: service_healthy
 
-  knowledge-migrate:
-    build: ./real-estate-ai-mvp/rag
+  rag-migrate:
+    build: &rag-build
+      context: ./real-estate-ai-mvp/rag
+      args:
+        INSTALL_RERANKER: ${RAG_INSTALL_RERANKER:-true}
     command: ["migrate"]
     environment: *rag-environment
 
-  knowledge-api:
-    build: ./real-estate-ai-mvp/rag
-    command: ["api", "--host", "0.0.0.0"]
+  rag-api:
+    build: *rag-build
+    command: ["api", "--host", "0.0.0.0", "--port", "8090"]
     restart: unless-stopped
     environment: *rag-environment
     ports:
       - "127.0.0.1:${RAG_PORT:-8090}:8090"
     volumes:
-      - ./real-estate-ai-mvp/rag/storage:/data/sources
+      - rag-sources:/data/sources
+      - rag-models:/models
     depends_on:
-      knowledge-migrate:
+      rag-migrate:
         condition: service_completed_successfully
 
-  knowledge-worker:
-    build: ./real-estate-ai-mvp/rag
+  rag-worker:
+    build: *rag-build
     command: ["worker"]
     restart: unless-stopped
     environment: *rag-environment
     volumes:
-      - ./real-estate-ai-mvp/rag/storage:/data/sources
-      - knowledge-embedding-models:/models
+      - rag-sources:/data/sources
     depends_on:
-      knowledge-migrate:
+      rag-migrate:
         condition: service_completed_successfully
+
+  voice-agent:
+    build: ./voice-agent
+    restart: unless-stopped
+    # Provider keys, VoiceLink credentials and speech tuning come from .env; the settings below wire
+    # the agent to the other services. Pinned to one container: calls, the rate governor, the call
+    # registry and the outbox are in-process state.
+    env_file: .env
+    environment:
+      PROVIDER_MODE: ${VOICE_PROVIDER_MODE:-fake}
+      CRM_MODE: ${CRM_MODE:-http}
+      CRM_BASE_URL: http://api:8080
+      CRM_WORKSPACE_ID: ${SERVICE_ACCOUNT_WORKSPACE_ID:-1}
+      CRM_SERVICE_EMAIL: ${SERVICE_ACCOUNT_EMAIL:-}
+      CRM_SERVICE_PASSWORD: ${SERVICE_ACCOUNT_PASSWORD:-}
+      ADMIN_API_TOKEN: ${VOICE_AGENT_API_KEY:?Set VOICE_AGENT_API_KEY in .env}
+      RAG_SERVICE_URL: http://rag-api:8090
+      RAG_VOICE_TOKEN: ${RAG_VOICE_TOKEN:-}
+      RUNTIME_DIR: /srv/data/runtime
+      CACHE_DIR: /srv/cache
+    ports:
+      - "127.0.0.1:${VOICE_AGENT_PORT:-8081}:8080"
+    volumes:
+      - voice-agent-runtime:/srv/data/runtime
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   file-storage:
-  knowledge-embedding-models:
+  voice-agent-runtime:
+  rag-sources:
+  rag-models:

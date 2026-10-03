@@ -45,6 +45,8 @@ class ApiIntegrationTest {
     r.add("spring.flyway.enabled", () -> true);
     r.add("app.integrations.mode", () -> "mock");
     r.add("app.notifications.reminders-enabled", () -> false);
+    r.add("app.knowledge.sync-enabled", () -> false);
+    r.add("app.calls.scheduler-enabled", () -> false);
   }
 
   @Autowired MockMvc mvc;
@@ -763,6 +765,36 @@ class ApiIntegrationTest {
         .andExpect(
             org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
                 .contentType("application/pdf"));
+  }
+
+  @Test
+  void anUploadedFileIsIndexedAutomaticallyAndTheDocumentFollowsTheKnowledgeService()
+      throws Exception {
+    var result =
+        mvc.perform(
+                multipart("/api/v1/projects/" + projectId + "/documents/upload")
+                    .file(
+                        new org.springframework.mock.web.MockMultipartFile(
+                            "files", "price-sheet.csv", "text/csv",
+                            "Charge,Amount\nFloor rise,₹40 per sq ft\n".getBytes()))
+                    .header("Authorization", "Bearer " + token)
+                    .header("X-Workspace-Id", ws))
+            .andReturn();
+    String documentId =
+        json.readTree(result.getResponse().getContentAsString())
+            .get("uploaded").get(0).get("documentId").asText();
+    JsonNode uploaded = send("GET", "/documents/" + documentId, null, token, ws, 200);
+    assertEquals("DRAFT", uploaded.get("status").asText());
+    assertEquals("UPLOADED", uploaded.get("processingStatus").asText());
+    assertTrue(uploaded.hasNonNull("ragSourceId"));
+
+    // The demo adapter reports the upload as published on the next status check, as the
+    // knowledge service does once embedding finishes; the document follows it.
+    JsonNode status = send("GET", "/documents/" + documentId + "/processing-status", null, token, ws, 200);
+    assertEquals("PUBLISHED", status.get("status").asText());
+    assertEquals("PUBLISHED", status.get("documentStatus").asText());
+    assertEquals(
+        "PUBLISHED", send("GET", "/documents/" + documentId, null, token, ws, 200).get("status").asText());
   }
 
   @Test
