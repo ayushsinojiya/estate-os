@@ -167,6 +167,10 @@ class Settings(BaseSettings):
     # TRAI calling window for outbound calls, local time (Asia/Kolkata).
     calling_hours_start: str = "09:00"
     calling_hours_end: str = "21:00"
+    # Comma-separated test numbers (your own phones) that may be called outside the window above,
+    # for testing at any hour. Matched on the last 10 digits. The do-not-call check still applies.
+    # Never put a customer's number here.
+    test_phone_allowlist: str = ""
     # A sales line for warm transfer. Blank: escalation becomes a scheduled callback + handover.
     sales_transfer_number: str = ""
     # Whether the provider supports a live transfer at all (VoiceLink: not documented yet).

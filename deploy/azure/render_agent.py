@@ -44,6 +44,8 @@ PLAIN = {
     "WORKSPACE_ID": "ws_demo",
     "BUILDER_NAME": "XYZ Realty",
     "DEFAULT_OUTBOUND_LANGUAGE": "mr",
+    # Your own phones, callable outside 09:00-21:00 IST for testing. Never a customer's number.
+    "TEST_PHONE_ALLOWLIST": "",
     "CRM_MODE": "http",
     "CRM_BASE_URL": "https://placeholder.invalid",
     "CRM_WORKSPACE_ID": "1",

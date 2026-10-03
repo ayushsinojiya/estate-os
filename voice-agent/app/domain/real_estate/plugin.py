@@ -14,7 +14,7 @@ from app.crm.ingest import CallIngest
 from app.crm.mock import MockCrm
 from app.domain.base import CallInfo
 from app.llm.base import Message
-from app.outbound.registry import NO_ANSWER, OutboundRecord
+from app.outbound.registry import NO_ANSWER, OutboundRecord, phone_tail
 from app.outbox.outbox import PermanentFailure
 from app.rag.client import FakeKnowledge, HttpKnowledge
 
@@ -142,7 +142,8 @@ class RealEstatePlugin:
     async def may_dial(self, record: OutboundRecord) -> tuple[bool, str | None]:
         """TRAI hours and the CRM's do-not-call list, checked right before every dial."""
         s = self.settings
-        if not within_calling_hours(now_ist(), s.calling_hours_start, s.calling_hours_end):
+        if not within_calling_hours(now_ist(), s.calling_hours_start, s.calling_hours_end) \
+                and not self._is_test_phone(record.phone):
             return False, "OUTSIDE_CALLING_HOURS"
         try:
             if await asyncio.wait_for(self.crm.check_dnc(record.phone), 3):
@@ -152,6 +153,14 @@ class RealEstatePlugin:
             log.warning("do-not-call check unavailable (%r); not dialling %s", exc, record.request_id)
             return False, "DNC_CHECK_UNAVAILABLE"
         return True, None
+
+    def _is_test_phone(self, phone: str) -> bool:
+        tail = phone_tail(phone)
+        allowed = {phone_tail(p) for p in self.settings.test_phone_allowlist.split(",") if phone_tail(p)}
+        if tail and tail in allowed:
+            log.info("outside calling hours, but %s is an allow-listed test number", "…" + tail[-4:])
+            return True
+        return False
 
     async def on_outbound_update(self, record: OutboundRecord) -> None:
         """An outbound call nobody answered still goes on the record; the CRM decides on a retry."""
