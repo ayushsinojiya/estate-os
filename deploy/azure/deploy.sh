@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploys the CRM, the voice agent and the CRM web UI to Azure Container Apps, wired to each other
-# and to a managed PostgreSQL server.
+# Deploys the CRM, the voice agent, the knowledge service (API + worker) and the CRM web UI to Azure
+# Container Apps, wired to each other and to a managed PostgreSQL server (with pgvector).
 #
 #   ./deploy.sh            full deploy (safe to re-run; every step is idempotent)
 #   ./deploy.sh images     rebuild and roll out new images only
@@ -25,6 +25,9 @@ ENVIRONMENT="${PREFIX}-env"
 PG="${PREFIX}-pg"
 STORAGE="${PREFIX}storage"
 SHARE="agent-state"
+RAG_SHARE="rag-sources"
+RAG_API_APP="${PREFIX}-rag-api"
+RAG_WORKER_APP="${PREFIX}-rag-worker"
 CRM_APP="${PREFIX}-crm-api"
 AGENT_APP="${PREFIX}-voice-agent"
 WEB_APP="${PREFIX}-crm-web"
@@ -49,7 +52,8 @@ PY
   fi
 }
 
-for key in JWT_SECRET SERVICE_ACCOUNT_PASSWORD VOICE_AGENT_API_KEY DEMO_PASSWORD POSTGRES_ADMIN_PASSWORD; do
+for key in JWT_SECRET SERVICE_ACCOUNT_PASSWORD VOICE_AGENT_API_KEY DEMO_PASSWORD POSTGRES_ADMIN_PASSWORD \
+           RAG_SERVICE_TOKEN RAG_VOICE_TOKEN; do
   if [[ -z "${!key:-}" ]]; then
     value="$(gen)"
     printf -v "$key" '%s' "$value"
@@ -83,6 +87,12 @@ provision() {
   # nesting this would skip it on every subsequent run.
   az postgres flexible-server db show -g "$RESOURCE_GROUP" -s "$PG" -n estraos -o none 2>/dev/null ||
     az postgres flexible-server db create -g "$RESOURCE_GROUP" -s "$PG" -n estraos -o none
+  # The knowledge service has its own database and needs pgvector and pg_trgm, which Azure only
+  # lets a database create once they are allow-listed on the server.
+  az postgres flexible-server parameter set -g "$RESOURCE_GROUP" -s "$PG" \
+    --name azure.extensions --value VECTOR,PG_TRGM -o none
+  az postgres flexible-server db show -g "$RESOURCE_GROUP" -s "$PG" -n estraos_knowledge -o none 2>/dev/null ||
+    az postgres flexible-server db create -g "$RESOURCE_GROUP" -s "$PG" -n estraos_knowledge -o none
 
   log "Storage for the agent's durable state"
   # The agent keeps its do-not-call suppression list and outbound-call registry in SQLite.
@@ -94,6 +104,9 @@ provision() {
   key="$(az storage account keys list -n "$STORAGE" -g "$RESOURCE_GROUP" --query '[0].value' -o tsv)"
   az storage share-rm create --storage-account "$STORAGE" -g "$RESOURCE_GROUP" \
     -n "$SHARE" --quota 8 -o none 2>/dev/null || true
+  # Uploaded knowledge sources: written by the RAG API, read by the RAG worker.
+  az storage share-rm create --storage-account "$STORAGE" -g "$RESOURCE_GROUP" \
+    -n "$RAG_SHARE" --quota 32 -o none 2>/dev/null || true
 
   log "Container Apps environment $ENVIRONMENT"
   az containerapp env show -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" -o none 2>/dev/null ||
@@ -101,6 +114,9 @@ provision() {
   az containerapp env storage set -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" \
     --storage-name agentstate --azure-file-account-name "$STORAGE" --azure-file-account-key "$key" \
     --azure-file-share-name "$SHARE" --access-mode ReadWrite -o none
+  az containerapp env storage set -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" \
+    --storage-name ragsources --azure-file-account-name "$STORAGE" --azure-file-account-key "$key" \
+    --azure-file-share-name "$RAG_SHARE" --access-mode ReadWrite -o none
 }
 
 # ---------------------------------------------------------------- images
@@ -145,6 +161,11 @@ build_agent_image() {
   push_image voice-agent "$AGENT_DIR"
 }
 
+build_rag_image() {
+  log "Building knowledge service image (linux/amd64, without the local reranker)"
+  push_image rag "$CRM_DIR/rag" --build-arg INSTALL_RERANKER=false
+}
+
 build_web_image() {
   # The browser calls the CRM API directly, so its URL is baked into the bundle at build time.
   local api_url="$1"
@@ -175,13 +196,36 @@ acr_creds() {
   echo "$ACR_PASS" | docker login "$ACR_SERVER" -u "$ACR_USER" --password-stdin >/dev/null
 }
 
+# Inside the environment, an app is reachable at http://<app name> (internal ingress, port 80).
+RAG_INTERNAL_URL="http://${RAG_API_APP}"
+
+deploy_rag() {
+  log "Deploying knowledge service (API + worker)"
+  ENV_ID="$(az containerapp env show -n "$ENVIRONMENT" -g "$RESOURCE_GROUP" --query id -o tsv)"
+  export ENV_ID ACR_SERVER ACR_USER ACR_PASS TAG LOCATION RAG_SERVICE_TOKEN RAG_VOICE_TOKEN OPENAI_API_KEY
+  export RAG_VOICE_WORKSPACE_ID="${SERVICE_ACCOUNT_WORKSPACE_ID:-1}"
+  export RAG_DATABASE_URL="postgresql://${POSTGRES_ADMIN_USER}:${POSTGRES_ADMIN_PASSWORD}@${PG}.postgres.database.azure.com:5432/estraos_knowledge?sslmode=require"
+  local role app yaml
+  for role in api worker; do
+    app="$RAG_API_APP"; [[ "$role" == worker ]] && app="$RAG_WORKER_APP"
+    yaml="$(mktemp -t "rag-$role")"
+    python3 render_rag.py "$role" > "$yaml"
+    if az containerapp show -n "$app" -g "$RESOURCE_GROUP" -o none 2>/dev/null; then
+      az containerapp update -n "$app" -g "$RESOURCE_GROUP" --yaml "$yaml" -o none
+    else
+      az containerapp create -n "$app" -g "$RESOURCE_GROUP" --yaml "$yaml" -o none
+    fi
+    rm -f "$yaml"
+  done
+}
+
 deploy_crm() {
   log "Deploying CRM API"
   local jdbc="jdbc:postgresql://${PG}.postgres.database.azure.com:5432/estraos?sslmode=require"
   local secrets=(
     "db-password=$POSTGRES_ADMIN_PASSWORD" "jwt-secret=$JWT_SECRET"
     "service-password=$SERVICE_ACCOUNT_PASSWORD" "voice-key=$VOICE_AGENT_API_KEY"
-    "demo-password=$DEMO_PASSWORD"
+    "demo-password=$DEMO_PASSWORD" "rag-token=$RAG_SERVICE_TOKEN"
   )
   local env=(
     "DATABASE_URL=$jdbc" "DATABASE_USERNAME=$POSTGRES_ADMIN_USER"
@@ -192,12 +236,15 @@ deploy_crm() {
     "SERVICE_ACCOUNT_WORKSPACE_ID=$SERVICE_ACCOUNT_WORKSPACE_ID"
     "SERVICE_ACCOUNT_WORKSPACE_NAME=$SERVICE_ACCOUNT_WORKSPACE_NAME"
     "SERVICE_ACCOUNT_ADMIN_EMAILS=${SERVICE_ACCOUNT_ADMIN_EMAILS:-}"
-    "INTEGRATIONS_MODE=rest" "VOICE_AGENT_API_KEY=secretref:voice-key"
-    # Placeholders replaced by wire_together once both FQDNs exist.
+    # mock keeps the optional notification adapter offline; the knowledge service and the voice
+    # agent are used for real because their URLs are set.
+    "INTEGRATIONS_MODE=mock" "VOICE_AGENT_API_KEY=secretref:voice-key"
+    "RAG_SERVICE_URL=$RAG_INTERNAL_URL" "RAG_SERVICE_TOKEN=secretref:rag-token"
+    # Placeholder replaced by wire_together once the agent's FQDN exists.
     "VOICE_AGENT_SERVICE_URL=${VOICE_AGENT_SERVICE_URL:-https://placeholder.invalid}"
-    "RAG_SERVICE_URL=${RAG_SERVICE_URL:-https://placeholder.invalid}"
-    "NOTIFICATION_SERVICE_URL=${NOTIFICATION_SERVICE_URL:-https://placeholder.invalid}"
     "CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:5173}"
+    # The image's working directory is not writable by its user.
+    "FILE_STORAGE_PATH=/tmp/files"
   )
   if az containerapp show -n "$CRM_APP" -g "$RESOURCE_GROUP" -o none 2>/dev/null; then
     az containerapp secret set -n "$CRM_APP" -g "$RESOURCE_GROUP" --secrets "${secrets[@]}" -o none
@@ -224,6 +271,7 @@ deploy_agent() {
   export CRM_SERVICE_PASSWORD="${SERVICE_ACCOUNT_PASSWORD:-}"
   export CRM_WORKSPACE_ID="${SERVICE_ACCOUNT_WORKSPACE_ID:-1}"
   export CRM_BASE_URL="${CRM_BASE_URL:-https://$(fqdn "$CRM_APP")}"
+  export RAG_SERVICE_URL="$RAG_INTERNAL_URL" RAG_VOICE_TOKEN
   python3 render_agent.py > "$yaml"
   if az containerapp show -n "$AGENT_APP" -g "$RESOURCE_GROUP" -o none 2>/dev/null; then
     az containerapp update -n "$AGENT_APP" -g "$RESOURCE_GROUP" --yaml "$yaml" -o none
@@ -259,7 +307,7 @@ wire_together() {
 
   az containerapp update -n "$AGENT_APP" -g "$RESOURCE_GROUP" --set-env-vars \
     "CRM_BASE_URL=$crm" "PUBLIC_WS_BASE_URL=wss://$(fqdn "$AGENT_APP")" \
-    "VOICE_LINK_WEBHOOK_URL=$agent/telephony/voicelink/webhook" -o none
+    "VOICE_LINK_WEBHOOK_URL=$agent/telephony/voicelink/webhook${VOICE_LINK_WEBHOOK_TOKEN:+?token=$VOICE_LINK_WEBHOOK_TOKEN}" -o none
 }
 
 urls() {
@@ -268,6 +316,7 @@ urls() {
   CRM web UI     https://$(fqdn "$WEB_APP")
   CRM API        https://$(fqdn "$CRM_APP")        (docs at /swagger-ui.html)
   Voice agent    https://$(fqdn "$AGENT_APP")      (health at /healthz)
+  Knowledge      $RAG_INTERNAL_URL              (internal only)
 
   VoiceLink websocket bot URL:
     wss://$(fqdn "$AGENT_APP")/telephony/voicelink/ws
@@ -281,15 +330,17 @@ case "${1:-all}" in
   urls) urls ;;
   images)
     acr_creds
-    build_crm_image; build_agent_image
+    build_crm_image; build_agent_image; build_rag_image
     build_web_image "https://$(fqdn "$CRM_APP")"
-    deploy_crm; deploy_agent; deploy_web; wire_together; urls
+    deploy_rag; deploy_crm; deploy_agent; deploy_web; wire_together; urls
     ;;
   all)
     provision
     acr_creds
     build_crm_image
     build_agent_image
+    build_rag_image
+    deploy_rag
     deploy_crm
     deploy_agent
     # The web bundle needs the CRM's hostname, so it is built after the API exists.

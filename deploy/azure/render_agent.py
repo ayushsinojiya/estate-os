@@ -21,6 +21,7 @@ SECRETS = {
     "rumik-key": "RUMIK_API_KEY",
     "voicelink-password": "VOICE_LINK_PASSWORD",
     "voicelink-webhook-token": "VOICE_LINK_WEBHOOK_TOKEN",
+    "rag-voice-token": "RAG_VOICE_TOKEN",
 }
 
 # Environment variable -> secret name, wired only when that secret has a value.
@@ -32,6 +33,7 @@ SECRET_ENV = {
     "RUMIK_API_KEY": "rumik-key",
     "VOICE_LINK_PASSWORD": "voicelink-password",
     "VOICE_LINK_WEBHOOK_TOKEN": "voicelink-webhook-token",
+    "RAG_VOICE_TOKEN": "rag-voice-token",
 }
 
 # Plain settings, passed through from azure.env with a default when unset.
@@ -48,6 +50,8 @@ PLAIN = {
     "CRM_SERVICE_EMAIL": "",
     "CRM_TOKEN_REFRESH_MARGIN_S": "120",
     "CRM_CATALOG_REFRESH_S": "900",
+    # The knowledge service (brochures, FAQs, charges) over the environment's internal network.
+    "RAG_SERVICE_URL": "",
     "LANGUAGE_SWITCH_CONFIDENCE": "0.6",
     "VOICE_LINK_BASE_URL": "https://app.voicelink.co.in/api",
     "VOICE_LINK_USERNAME": "",
