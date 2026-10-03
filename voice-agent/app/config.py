@@ -149,6 +149,13 @@ class Settings(BaseSettings):
     # Outbound pacing and admin access. ADMIN_API_TOKEN is the CRM's VOICE_AGENT_API_KEY.
     admin_api_token: str = ""
     llm_probe_interval_s: float = 30.0
+    # ---- per-call cost log (telephony excluded); defaults are Sarvam's published prices in INR
+    cost_stt_per_hour: float = 30.0
+    cost_tts_per_1k_chars: float = 3.0
+    cost_llm_input_per_m: float = 29.28
+    cost_llm_cached_per_m: float = 10.98
+    cost_llm_output_per_m: float = 73.20
+    cost_currency: str = "INR"
     outbound_max_in_flight: int = 5
     outbound_min_interval_s: float = 2.0
     outbound_dial_timeout_s: float = 180.0
@@ -237,5 +244,12 @@ class Settings(BaseSettings):
 
 
 @lru_cache
+
+def cost_prices(s: "Settings"):
+    from app.observability.cost import Prices
+    return Prices(s.cost_stt_per_hour, s.cost_tts_per_1k_chars, s.cost_llm_input_per_m,
+                  s.cost_llm_cached_per_m, s.cost_llm_output_per_m, s.cost_currency)
+
+
 def get_settings() -> Settings:
     return Settings()

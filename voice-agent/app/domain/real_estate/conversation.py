@@ -9,7 +9,9 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from app.domain.base import CallerTurnAction, CallInfo, CallRecord, Tool
+from app.config import cost_prices
 from app.lang.languages import LANGS, Lang
+from app.observability.cost import MeteredProvider
 from app.llm.base import Message
 
 from . import flows
@@ -325,7 +327,10 @@ class RealEstateConversation:
             await asyncio.wait(list(self._tasks), timeout=5)
         extraction = Extraction()
         if self.state.caller_turns > 0:
-            extraction = await extract(self.plugin.services.router.primary, record.transcript, self.state.tool_log)
+            provider = self.plugin.services.router.primary
+            if record.cost is not None:
+                provider = MeteredProvider(provider, record.cost, "post_call")
+            extraction = await extract(provider, record.transcript, self.state.tool_log)
         payload = self.build_record(record, extraction)
         log.info("call %s finished: %s, score %s, prompt %s", self.info.call_id, self.state.call_type,
                  payload.get("leadScore"), PROMPT_VERSION)
@@ -337,7 +342,8 @@ class RealEstateConversation:
                 "transcript": "\n".join(f"{t.get('speaker')}: {t.get('text')}" for t in record.transcript),
                 "requirements": self.state.requirements.known(),
                 "handoverStatus": "PENDING" if payload.get("handoverRequested") else "NOT_REQUESTED",
-                "callbackStatus": "REQUESTED" if payload.get("callbackAt") else "NOT_REQUESTED"})
+                "callbackStatus": "REQUESTED" if payload.get("callbackAt") else "NOT_REQUESTED",
+                "cost": record.cost.summary(cost_prices(self.plugin.settings)) if record.cost is not None else None})
 
 
 def _int(value: Any) -> int | None:

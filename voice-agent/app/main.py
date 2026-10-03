@@ -6,6 +6,7 @@ Run: uvicorn app.main:app --host 0.0.0.0 --port 8080
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket
 
-from app.config import Settings, get_settings
+from app.config import cost_prices, Settings, get_settings
 from app.conversation.caller_audio import AudioCallerInput
 from app.conversation.session import CallSession
 from app.conversation.speech import AudioSpeechOutput
@@ -37,11 +38,28 @@ async def _minute_ticker(c: Container) -> None:
         c.stt_leg.tick(now)
 
 
+def _share_probe(c: Container, usage) -> None:
+    """A probe runs because calls are live: its cost is shared equally between them."""
+    sessions = list(c.active_calls.values())
+    for session in sessions:
+        share = 1 / len(sessions)
+        session.cost.add_request("probe", share)
+        if usage is not None:
+            session.cost.add_usage("probe", usage, share)
+
+
 async def _finish(c: Container, session: CallSession) -> None:
+    record = session.record()
     try:
-        await session.conversation.finish(session.record())
+        await session.conversation.finish(record)
     except Exception:  # noqa: BLE001 - post-call work is retried by the outbox, never by the caller
         log.exception("call %s: post-call processing failed", session.info.call_id)
+    # After post-call work, so its model usage is included.
+    cost = record.cost.summary(cost_prices(c.settings))
+    log.info("call %s cost: %s", session.info.call_id, json.dumps(cost, ensure_ascii=False))
+    for entry in c.recent_metrics:
+        if entry.get("call_id") == session.info.call_id:
+            entry["cost"] = cost
 
 
 async def handle_call(c: Container, websocket: WebSocket) -> None:
@@ -117,7 +135,8 @@ def create_app(settings: Settings | None = None, plugin_factory: PluginFactory |
                  asyncio.create_task(LLMProbe(c.router.primary, c.llm_leg, c.governor,
                                               settings.llm_probe_interval_s,
                                               active_calls=lambda: len(c.active_calls),
-                                              messages=c.plugin.probe_messages).loop()),
+                                              messages=c.plugin.probe_messages,
+                                              on_usage=lambda u: _share_probe(c, u)).loop()),
                  asyncio.create_task(c.dialer.run()),
                  asyncio.create_task(c.outbox.run())]
         if settings.provider_mode == "live":

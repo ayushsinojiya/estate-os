@@ -27,7 +27,8 @@ from app.domain.base import (CallerTurnAction, CallInfo, CallRecord, Conversatio
 from app.lang.devanagari import to_devanagari_speech
 from app.lang.languages import Lang, LanguageTracker, is_noise
 from app.lang.redaction import redact
-from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady
+from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady, Usage
+from app.observability.cost import CostMeter
 from app.llm.router import AllProvidersFailed, LLMRoute, LLMRouter
 
 log = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ class CallSession:
         self._ending = False
         self._pending_end: ToolOutcome | None = None
         self._goodbye_said = False
+        self.cost = CostMeter()
         self._tasks: list[asyncio.Task] = []
         self._reply: asyncio.Task | None = None
         self._barge_task: asyncio.Task | None = None
@@ -219,6 +221,7 @@ class CallSession:
 
                 buffer, hop_text, calls = "", "", []
                 hop_started, first_event_ms = time.monotonic(), None
+                self.cost.add_request("call")
                 # Tools stay declared on the last hop: the conversation already holds tool calls,
                 # and a provider rejects that history without tool definitions (Sarvam: 400). Calls
                 # made on the last hop are ignored below.
@@ -228,6 +231,9 @@ class CallSession:
                         temperature=self.deps.llm_temperature):
                     if first_event_ms is None:
                         first_event_ms = (time.monotonic() - hop_started) * 1000
+                    if isinstance(event, Usage):
+                        self.cost.add_usage("call", event)
+                        continue
                     if isinstance(event, ToolCallReady):
                         calls.append(event.call)
                         continue
@@ -503,10 +509,14 @@ class CallSession:
         return self.metrics
 
     def record(self) -> CallRecord:
+        # Speech-to-text streams every second of the call; synthesised characters are counted by the
+        # speech output (cached phrases excluded).
+        self.cost.stt_seconds = self.metrics.duration_s
+        self.cost.tts_chars = getattr(self.speech, "synth_chars", 0)
         return CallRecord(info=self.info, transcript=list(self.transcript),
                           languages_used=sorted(self.lang.used), final_language=self.lang.current,
                           duration_s=round(self.metrics.duration_s, 2),
-                          end_reason=self.metrics.end_reason, metrics=self.metrics.summary())
+                          end_reason=self.metrics.end_reason, metrics=self.metrics.summary(), cost=self.cost)
 
     async def _end(self, say_closing: bool = True) -> None:
         if self._ending:
