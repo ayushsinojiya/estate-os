@@ -92,32 +92,73 @@ def _word_values() -> dict[str, int]:
 _WORDS: dict[str, int] | None = None
 
 
+_HUNDRED = {"सौ", "hundred"}
+_THOUSAND = {"हज़ार", "हजार", "thousand"}
+_POINT = {"point", "दशमलव", "पॉइंट"}
+# "76 लाख 50000" (from "छिहत्तर लाख पचास हज़ार") is one amount: 76.5 lakh.
+_LAKH_THOUSAND = re.compile(r"(\d+(?:\.\d+)?)\s*(लाख|lakhs?)\s+(\d{4,5})(?![\d.])", re.I)
+
+
 def words_to_digits(text: str) -> str:
-    """Number words to digits: "साठ से अस्सी लाख" -> "60 से 80 लाख", "seventy six" -> "76",
-    "डेढ़ करोड़" -> "1.5 करोड़", "साढ़े आठ लाख" -> "8.5 लाख". Other words are left alone."""
+    """Number words to digits, whole numbers at a time: "सात सौ बीस" -> "720", "seventy six" -> "76",
+    "साठ से अस्सी लाख" -> "60 से 80 लाख", "डेढ़ करोड़" -> "1.5 करोड़", "साढ़े आठ लाख" -> "8.5 लाख",
+    "छिहत्तर लाख पचास हज़ार" -> "76.5 लाख". Other words are left alone."""
     global _WORDS
     if _WORDS is None:
         _WORDS = _word_values()
     out: list[str] = []
-    half = False
+    total, cur, active, half = 0.0, 0.0, False, False
+    decimal: float | None = None  # the whole part, after "point"
+
+    def flush() -> None:
+        nonlocal total, cur, active, half, decimal
+        if decimal is not None:
+            out.append(_trim(decimal + (cur / (10 if cur < 10 else 100) if active else 0)))
+        elif active:
+            out.append(_trim(total + cur + (0.5 if half else 0)))
+        total, cur, active, half, decimal = 0.0, 0.0, False, False, None
+
     for token in (text or "").split():
         word = token.strip(".,?!।").lower()
         if word in _HALF_PLUS:
+            flush()
             half = True
             continue
+        if word in _POINT and active and decimal is None:
+            decimal, total, cur, active = total + cur, 0.0, 0.0, False
+            continue
         if word in _FRACTIONS:
-            out.append(_trim(_FRACTIONS[word]))
-        elif word in _WORDS:
+            flush()
+            cur, active = _FRACTIONS[word], True
+        elif word in _HUNDRED and (active or word == "सौ"):
+            cur, active = (cur or 1) * 100, True
+        elif word in _THOUSAND and active and decimal is None:
+            total, cur = total + (cur or 1) * 1000, 0.0
+        elif word in _WORDS and word not in _HUNDRED:
             value = _WORDS[word]
-            # "seventy six": an English tens word followed by a unit word is one number.
-            if out and value < 10 and word in _EN_UNITS and out[-1].isdigit() and int(out[-1]) % 10 == 0 \
-                    and 20 <= int(out[-1]) <= 90:
-                value += int(out.pop())
-            out.append(_trim(value + 0.5) if half else str(value))
+            # A new number starts unless this word extends the current one: "seventy six", "सौ बीस",
+            # "हज़ार पाँच सौ".
+            extends = ((cur == 0 and total > 0) or (cur % 100 == 0 and cur >= 100 and value < 100)
+                       or (word in _EN_UNITS and 20 <= cur % 100 <= 90 and cur % 10 == 0 and value < 10))
+            if decimal is not None and active:
+                flush()
+            elif active and not extends:
+                flush()
+            cur, active = cur + value, True
         else:
+            dangling_half = half and not active  # "साढ़े" not followed by a number word
+            flush()
+            if dangling_half:
+                out.append("साढ़े")
             out.append(token)
-        half = False
-    return " ".join(out)
+            continue
+        if token[-1:] in ".,?!।":  # punctuation ends the number
+            flush()
+            out[-1] += token[-1]
+    flush()
+    joined = " ".join(out)
+    # "76 लाख 50 हज़ार" is one amount: 76.5 lakh.
+    return _LAKH_THOUSAND.sub(lambda m: f"{_trim(float(m.group(1)) + int(m.group(3)) / 100_000)} {m.group(2)}", joined)
 
 
 # One stray word is allowed between the two figures: speech recognition keeps stumbles ("60 से अठ्ठे 80 लाख").

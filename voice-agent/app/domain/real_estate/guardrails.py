@@ -127,6 +127,8 @@ class PriceGuard:
         return False
 
     def unsupported(self, sentence: str) -> list[int]:
+        # Riya writes numbers as words ("साढ़े छिहत्तर लाख", "सात सौ बीस"); read them as figures.
+        sentence = words_to_digits(sentence)
         return [a for a in amounts_in(sentence) if not self.supported(a)] + self.unsupported_areas(sentence)
 
     def unsupported_areas(self, sentence: str) -> list[int]:

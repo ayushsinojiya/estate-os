@@ -122,12 +122,14 @@ class Container:
                                     s.sarvam_tts_preprocessing)
         if s.tts_primary == "rumik" and s.rumik_api_key:
             rumik = RumikTTS(s.rumik_api_key, s.rumik_base_url, s.rumik_model,
-                             s.rumik_voice_description, s.rumik_speaker)
+                             s.rumik_voice_description, s.rumik_speaker,
+                             temperature=s.rumik_temperature)
             return FailoverTTS(rumik, bulbul)
         # Bulbul primary, Rumik behind it when a key is configured.
         if s.rumik_api_key:
             return FailoverTTS(bulbul, RumikTTS(s.rumik_api_key, s.rumik_base_url, s.rumik_model,
-                                                s.rumik_voice_description, s.rumik_speaker))
+                                                s.rumik_voice_description, s.rumik_speaker,
+                             temperature=s.rumik_temperature))
         return FailoverTTS(bulbul, bulbul)
 
     def track(self, task) -> None:
@@ -203,7 +205,9 @@ def build_container(settings: Settings, plugin_factory: PluginFactory | None = N
         voicelink = (VoiceLinkClient(settings.voice_link_base_url, settings.voice_link_username,
                                      settings.voice_link_password)
                      if settings.voice_link_username else None)
-        voice_id = (f"rumik_{settings.rumik_model}" if settings.tts_primary == "rumik"
+        # The phrase cache is per voice: a different Rumik speaker must not replay clips in the old voice.
+        voice_id = (f"rumik_{settings.rumik_model}_{settings.rumik_speaker or 'described'}_v2"
+                    if settings.tts_primary == "rumik"
                     else f"sarvam_{settings.sarvam_tts_model.replace(':', '')}_{settings.sarvam_tts_speaker}")
     else:
         primary, fallback, voicelink, voice_id = DemoLLM("sarvam"), None, None, "fake"

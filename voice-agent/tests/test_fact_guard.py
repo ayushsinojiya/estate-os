@@ -43,3 +43,12 @@ def test_the_callers_spoken_budget_may_be_read_back():
     guard.add_caller_text("मुझे two BHK में साठ से अठ्ठे अस्सी लाख")
     assert guard.unsupported("ठीक है, 60 से 80 lakh में 2 BHK") == []
     assert guard.unsupported("60 lakh से 80 lakh") == []
+
+
+def test_numbers_written_as_words_are_checked_like_digits():
+    guard = PriceGuard()
+    guard.add_result({"priceMinInr": 7650000, "priceMaxInr": 8200000, "unitTypes": [{"carpetAreaSqft": 720}]})
+    assert guard.unsupported("Skyline Crest में साढ़े छिहत्तर से बयासी लाख में मिलेगा।") == []
+    assert guard.unsupported("दो BHK का carpet area सात सौ बीस स्क्वायर फ़ीट है।") == []
+    assert guard.unsupported("दो BHK साठ लाख में मिलेगा।") == [6000000]
+    assert guard.unsupported("carpet area सोलह सौ पचास sq ft है।") == [1650]

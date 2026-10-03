@@ -71,6 +71,9 @@ PLAIN = {
     "SARVAM_TTS_SPEAKER": "ishita",
     "RUMIK_MODEL": "mulberry",
     "RUMIK_SPEED": "1.2",
+    # A preset voice keeps Rumik's pitch steady (blank rebuilds the voice per request); 0.6 is Rumik's default.
+    "RUMIK_SPEAKER": "",
+    "RUMIK_TEMPERATURE": "0.6",
     "NOVA3_FLOOR_PASSED": "false",
     "VOICE_LINK_CAPTURE_MESSAGES": "20",
     # Which TTS engine actually speaks. The code default is sarvam_streaming, so leaving this

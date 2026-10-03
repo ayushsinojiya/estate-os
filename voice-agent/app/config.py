@@ -93,7 +93,11 @@ class Settings(BaseSettings):
     rumik_api_key: str = ""
     rumik_base_url: str = "https://silk-api.rumik.ai"
     rumik_model: str = "mulberry"
+    # A preset voice (female: ira, siya, aisha, zoya, emma, mia, sophia, ava). Blank rebuilds the voice
+    # from rumik_voice_description on every request, which makes the pitch vary between sentences.
     rumik_speaker: str = ""
+    # Sampling temperature (Rumik default 0.6); lower is more consistent. Blank leaves Rumik's default.
+    rumik_temperature: float | None = None
     # CL-012: Rumik has no speed setting; its audio is sped up here without changing pitch (1.0 = off)
     rumik_speed: float = 1.2
     # Linear gain applied to outgoing telephony audio. 1.0 leaves the TTS level untouched.
