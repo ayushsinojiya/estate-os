@@ -61,9 +61,13 @@ def detect_language(text: str, stt_language: str | None = None) -> tuple[Lang | 
     if "ळ" in text:
         scores["mr"] += 1.5
     hint = _STT_HINT.get(stt_language or "")
-    if hint:
-        scores[hint] += 1.5
     dev = devanagari_ratio(text)
+    # The recogniser's tag counts only when the script agrees: "Tuesday छे बजे" tagged en-IN is
+    # Hindi with an English word in it, not a switch to English.
+    if hint and not ((hint == "en" and (dev >= 0.2 or gujarati >= 0.2))
+                     or (hint in ("hi", "mr") and gujarati >= 0.5)
+                     or (hint == "gu" and dev >= 0.5)):
+        scores[hint] += 1.5
     # Latin script is weak evidence for English. Sarvam's codemix mode transcribes Hindi and
     # Marathi speech in Latin too, and a one-word reply ("ok", "hello") carries no language at
     # all — treating either as confident English flips the whole call into the wrong language.
