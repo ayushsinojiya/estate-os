@@ -53,6 +53,8 @@ def build_router(container: Callable[[], Any], admin: Callable[..., None]) -> AP
                 "outcome": d.get("outcome"), "summary": d.get("summary"), "transcript": d.get("transcript"),
                 "requirements": d.get("requirements") or {}, "leadScore": d.get("leadScore"),
                 "handoverStatus": d.get("handoverStatus", "NOT_REQUESTED"),
-                "callbackStatus": d.get("callbackStatus", "NOT_REQUESTED")}
+                "callbackStatus": d.get("callbackStatus", "NOT_REQUESTED"),
+                # Speech and model cost of the call (telephony excluded); see app/observability/cost.py.
+                "cost": d.get("cost")}
 
     return router

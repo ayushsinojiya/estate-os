@@ -44,26 +44,22 @@ SCALE = {
     "mr": {"thousand": "हजार", "lakh": "लाख", "crore": "कोटी", "rupees": "रुपये"},
     "hi": {"thousand": "हज़ार", "lakh": "लाख", "crore": "करोड़", "rupees": "रुपये"},
     "en": {"thousand": "thousand", "lakh": "lakh", "crore": "crore", "rupees": "rupees"},
-    "gu": {"thousand": "હજાર", "lakh": "લાખ", "crore": "કરોડ", "rupees": "રૂપિયા"},
 }
 
 MONTHS = {
     "mr": "जानेवारी फेब्रुवारी मार्च एप्रिल मे जून जुलै ऑगस्ट सप्टेंबर ऑक्टोबर नोव्हेंबर डिसेंबर".split(),
     "hi": "जनवरी फ़रवरी मार्च अप्रैल मई जून जुलाई अगस्त सितंबर अक्टूबर नवंबर दिसंबर".split(),
     "en": "January February March April May June July August September October November December".split(),
-    "gu": "જાન્યુઆરી ફેબ્રુઆરી માર્ચ એપ્રિલ મે જૂન જુલાઈ ઓગસ્ટ સપ્ટેમ્બર ઓક્ટોબર નવેમ્બર ડિસેમ્બર".split(),
 }
 WEEKDAYS = {  # Monday first
     "mr": "सोमवार मंगळवार बुधवार गुरुवार शुक्रवार शनिवार रविवार".split(),
     "hi": "सोमवार मंगलवार बुधवार गुरुवार शुक्रवार शनिवार रविवार".split(),
     "en": "Monday Tuesday Wednesday Thursday Friday Saturday Sunday".split(),
-    "gu": "સોમવાર મંગળવાર બુધવાર ગુરુવાર શુક્રવાર શનિવાર રવિવાર".split(),
 }
 RELATIVE_DAYS = {
     "mr": {0: "आज", 1: "उद्या", 2: "परवा"},
     "hi": {0: "आज", 1: "कल", 2: "परसों"},
     "en": {0: "today", 1: "tomorrow", 2: "day after tomorrow"},
-    "gu": {0: "આજે", 1: "આવતીકાલે", 2: "પરમદિવસે"},
 }
 
 
@@ -81,10 +77,6 @@ def below_100(n: int, lang: Lang) -> str:
         return MR_0_99[n]
     if lang == "hi":
         return HI_0_99[n]
-    if lang == "gu":
-        # Gujarati number words are left to the TTS, which reads digits natively in gu-IN; a
-        # hand-written table would need native review (TTS gate C7) before it could be trusted.
-        return str(n)
     return _en_below_100(n)
 
 
@@ -95,8 +87,6 @@ def _hundreds(h: int, rest: int, lang: Lang) -> str:
         return below_100(h, lang) + "शे"
     if lang == "hi":
         return below_100(h, lang) + " सौ"
-    if lang == "gu":
-        return below_100(h, lang) + " સો"
     return below_100(h, lang) + " hundred"
 
 
@@ -130,8 +120,6 @@ def half_words(n: int, lang: Lang) -> str:
         return {1: "दीड", 2: "अडीच"}.get(n, "साडे" + integer_words(n, lang))
     if lang == "hi":
         return {1: "डेढ़", 2: "ढाई"}.get(n, "साढ़े " + integer_words(n, lang))
-    if lang == "gu":
-        return {1: "દોઢ", 2: "અઢી"}.get(n, "સાડા " + integer_words(n, lang))
     return integer_words(n, lang) + " and a half"
 
 
@@ -180,7 +168,6 @@ def _day_part(hour: int, lang: Lang) -> str:
     parts = {
         "mr": ("सकाळी", "दुपारी", "संध्याकाळी", "रात्री"),
         "hi": ("सुबह", "दोपहर", "शाम", "रात"),
-        "gu": ("સવારે", "બપોરે", "સાંજે", "રાત્રે"),
     }[lang]
     if 5 <= hour < 12:
         return parts[0]
@@ -201,8 +188,6 @@ def time_words(t: time, lang: Lang) -> str:
         else:
             core = f"{integer_words(h12, lang)} {integer_words(m, lang) if m >= 10 else 'oh ' + integer_words(m, lang)}"
         return f"{core} {part}"
-    if lang == "gu":
-        return f"{part} {h12}:{m:02d}" if m else f"{part} {h12} વાગ્યે"
     suffix = "वाजता" if lang == "mr" else "बजे"
     next_hour = h12 % 12 + 1
     if m == 0:

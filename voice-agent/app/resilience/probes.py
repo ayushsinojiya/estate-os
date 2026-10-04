@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Callable
 
-from app.llm.base import LLMError, LLMProvider, Message
+from app.llm.base import LLMError, LLMProvider, Message, Usage
 from app.resilience.degradation import LegMonitor, LegState
 from app.resilience.rate_governor import Priority, RateGovernor
 
@@ -22,8 +22,12 @@ class LLMProbe:
     def __init__(self, provider: LLMProvider, leg: LegMonitor, governor: RateGovernor | None = None,
                  interval_s: float = 30.0, timeout_s: float = 2.0, clock: Callable[[], float] = time.monotonic,
                  active_calls: Callable[[], int] = lambda: 1,
-                 messages: Callable[[], list[Message]] = lambda: [Message("user", "hello")]):
+                 messages: Callable[[], list[Message]] = lambda: [Message("user", "hello")],
+                 on_usage: Callable[[Usage | None], None] | None = None):
         self.provider = provider
+        # Told about every probe and its token usage (None when the provider sent none), so the
+        # cost of probing can be attributed to the calls that were live.
+        self.on_usage = on_usage
         self.messages = messages
         self.leg = leg
         self.governor = governor
@@ -48,9 +52,21 @@ class LLMProbe:
         messages = self.messages()
         start = self.clock()
         agen = self.provider.stream(messages, [], max_tokens=8, temperature=0.0)
+        usage: Usage | None = None
         try:
-            await asyncio.wait_for(agen.__anext__(), self.timeout_s)
+            first = await asyncio.wait_for(agen.__anext__(), self.timeout_s)
             self.leg.record(self.clock(), latency_ms=(self.clock() - start) * 1000, source="probe")
+            usage = first if isinstance(first, Usage) else None
+            # The reply is at most a few tokens; reading it to the end yields the provider's usage.
+            async def rest() -> None:
+                nonlocal usage
+                async for event in agen:
+                    if isinstance(event, Usage):
+                        usage = event
+            try:
+                await asyncio.wait_for(rest(), self.timeout_s)
+            except (asyncio.TimeoutError, LLMError):
+                pass
         except (asyncio.TimeoutError, LLMError, StopAsyncIteration) as exc:
             log.info("LLM probe failed: %r", exc)
             self.leg.record(self.clock(), latency_ms=self.timeout_s * 1000, error=True, source="probe")
@@ -59,6 +75,11 @@ class LLMProbe:
                 await agen.aclose()
             except Exception:  # noqa: BLE001
                 pass
+            if self.on_usage is not None:
+                try:
+                    self.on_usage(usage)
+                except Exception:  # noqa: BLE001 - accounting must never break probing
+                    log.exception("probe usage callback failed")
         return True
 
     async def loop(self) -> None:

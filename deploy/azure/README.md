@@ -74,7 +74,26 @@ use it to check the wiring end to end. For real calls:
 Check `GET https://<agent>/healthz` before the first call: it reports provider mode, the LLM and
 STT circuit-breaker states and whether the outbound queue is paused.
 
+## Knowledge service
+
+`<prefix>-rag-api` (internal ingress only) and `<prefix>-rag-worker` run the same image. They use a
+second database, `estraos_knowledge`, on the same server; `deploy.sh` allow-lists `vector` and
+`pg_trgm` (`azure.extensions`) and the API applies its migrations on start. Uploaded sources live
+on the `rag-sources` Azure Files share. The CRM and the agent reach it at `http://<prefix>-rag-api`.
+
+## One environment per region
+
+Some subscriptions allow a single Container Apps environment per region. Set
+`CONTAINERAPP_ENV_NAME` and `CONTAINERAPP_ENV_RG` in `azure.env` to deploy into an existing one;
+everything else (database, registry, storage, apps) stays in `RESOURCE_GROUP`, and the environment
+storage names are prefixed so they never collide with other apps in that environment.
+
 ## Things worth knowing before this carries real traffic
+
+- **The agent's SQLite stores use the rollback journal on Azure Files** (`SQLITE_JOURNAL_MODE=DELETE`).
+  WAL needs shared memory that the old and new replica cannot share over SMB, so a restart never
+  completed. A deployment still running in WAL mode needs its old revision deactivated once
+  (`az containerapp revision deactivate`) when this setting is first rolled out.
 
 - **The agent runs as a single replica, pinned.** Its rate governor, degradation monitors and
   active-call table are in-process. `maxReplicas` is 1 on purpose; raising it will double-count

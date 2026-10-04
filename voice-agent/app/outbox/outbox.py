@@ -29,10 +29,12 @@ class PermanentFailure(Exception):
 
 class Outbox:
     def __init__(self, path: Path, *, base_delay_s: float = 2.0, max_delay_s: float = 300.0,
-                 max_attempts: int = 12, clock: Callable[[], float] = time.time):
+                 max_attempts: int = 12, clock: Callable[[], float] = time.time,
+                 journal_mode: str = "WAL"):
         path.parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        self._db.execute("PRAGMA journal_mode=WAL")
+        # See Settings.sqlite_journal_mode: DELETE on a network mount, WAL on a local disk.
+        self._db.execute(f"PRAGMA journal_mode={'DELETE' if journal_mode == 'DELETE' else 'WAL'}")
         self._lock = threading.Lock()
         self.base_delay_s = base_delay_s
         self.max_delay_s = max_delay_s

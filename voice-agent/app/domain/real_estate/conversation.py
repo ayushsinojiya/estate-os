@@ -9,7 +9,9 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from app.domain.base import CallerTurnAction, CallInfo, CallRecord, Tool
+from app.config import cost_prices
 from app.lang.languages import LANGS, Lang
+from app.observability.cost import MeteredProvider
 from app.llm.base import Message
 
 from . import flows
@@ -31,30 +33,31 @@ _OPENINGS: dict[str, dict[str, str]] = {
         "en": "Hello{name}, this is Riya from {builder}. {disclosure} You enquired about {topic} — is this a good time to talk?",
         "hi": "नमस्ते{name}, मैं रिया, {builder} से बोल रही हूँ। {disclosure} आपने {topic} के बारे में पूछताछ की थी — क्या अभी बात करने का सही समय है?",
         "mr": "नमस्कार{name}, मी रिया, {builder} कडून बोलतेय. {disclosure} तुम्ही {topic} बद्दल चौकशी केली होती — आत्ता बोलायला वेळ आहे का?",
-        "gu": "નમસ્તે{name}, હું રિયા, {builder} તરફથી બોલું છું. {disclosure} તમે {topic} વિશે પૂછપરછ કરી હતી — શું અત્યારે વાત કરવાનો સમય છે?",
     },
     "VISIT_REMINDER": {
         "en": "Hello, am I speaking with{name}? This is Riya from {builder}. {disclosure}",
         "hi": "नमस्ते, क्या मेरी बात{name} जी से हो रही है? मैं रिया, {builder} से। {disclosure}",
         "mr": "नमस्कार, मी{name} यांच्याशी बोलतेय का? मी रिया, {builder} कडून. {disclosure}",
-        "gu": "નમસ્તે, શું હું{name} સાથે વાત કરી રહી છું? હું રિયા, {builder} તરફથી. {disclosure}",
     },
     "CALLBACK": {
         "en": "Hello{name}, this is Riya from {builder}, calling back as you asked. {disclosure} Is this a good time?",
         "hi": "नमस्ते{name}, मैं रिया, {builder} से। आपने कॉल बैक के लिए कहा था। {disclosure} क्या अभी बात कर सकते हैं?",
         "mr": "नमस्कार{name}, मी रिया, {builder} कडून. तुम्ही परत कॉल करायला सांगितलं होतं. {disclosure} आत्ता बोलू शकतो का?",
-        "gu": "નમસ્તે{name}, હું રિયા, {builder} તરફથી. તમે ફરી કૉલ કરવા કહ્યું હતું. {disclosure} શું અત્યારે વાત કરી શકીએ?",
     },
     "RE_ENGAGEMENT": {
         "en": "Hello{name}, this is Riya from {builder}. {disclosure} We spoke earlier about your home search — do you have two minutes?",
         "hi": "नमस्ते{name}, मैं रिया, {builder} से। {disclosure} पहले हमने आपके घर की तलाश के बारे में बात की थी — क्या दो मिनट बात कर सकते हैं?",
         "mr": "नमस्कार{name}, मी रिया, {builder} कडून. {disclosure} आपण आधी तुमच्या घराच्या शोधाबद्दल बोललो होतो — दोन मिनिटं बोलू शकतो का?",
-        "gu": "નમસ્તે{name}, હું રિયા, {builder} તરફથી. {disclosure} અગાઉ આપણે તમારા ઘરની શોધ વિશે વાત કરી હતી — શું બે મિનિટ વાત કરી શકીએ?",
     },
 }
-_TOPIC_FALLBACK = {"en": "a home with us", "hi": "घर", "mr": "घर", "gu": "ઘર"}
+_TOPIC_FALLBACK = {"en": "a home with us", "hi": "घर", "mr": "घर"}
 _BOOKING = re.compile(r"(site\s*visit|visit\s+(?:karna|book|schedule)|dekhne\s+aana|dekhna\s+hai|"
                       r"विज़िट|विजिट|व्हिजिट|पाहायला\s+यायचं|જોવા\s+આવવું|વિઝિટ)", re.I)
+# "Tell me the details first", "later", "not now": the caller is not ready to book.
+_DEFER = re.compile(r"(पहले\s+(?:आप\s+)?(?:मुझे\s+)?(?:detail|डिटेल)|(?:details?|डिटेल्स?|जानकारी)\s+(?:बताइए|बताओ|बता\s+दो|"
+                    r"दीजिए|दो|चाहिए)|pehle\s+details?|details?\s+(?:batao|bataiye|chahiye)|बाद\s+में|baad\s+mein|"
+                    r"अभी\s+नहीं|abhi\s+nahi|not\s+now|later|first\s+(?:tell|give|share|send)|सोच\s+(?:के|कर)|"
+                    r"नंतर|आत्ता\s+नको|आधी\s+माहिती)", re.I)
 _QUESTION = re.compile(r"(\?|^(?:what|how|when|where|is|are|does|do|can|kya|kitna|kab|kaun|kahan|किती|काय|कधी|"
                        r"क्या|कितना|कब|શું|કેટલા|ક્યારે)\b)", re.I)
 
@@ -185,8 +188,12 @@ class RealEstateConversation:
             s.handover_reason = s.handover_reason or topic
             if topic not in s.escalations:
                 s.escalations.append(topic)
-        if _BOOKING.search(text):
+        s.wants_visit_now = bool(_BOOKING.search(text))
+        if s.wants_visit_now:
             s.asked_to_book = True
+            s.visit_deferred = False
+        elif _DEFER.search(text):
+            s.visit_deferred = True
         if _QUESTION.search(text.strip()) and len(s.questions) < 50:
             s.questions.append(text.strip()[:300])
         if s.call_type == "VISIT_REMINDER" and s.caller_turns == 1:
@@ -197,7 +204,8 @@ class RealEstateConversation:
     def screen_reply(self, sentence: str, lang: Lang) -> str:
         unsupported = self.state.guard.unsupported(sentence)
         if unsupported:
-            log.warning("call %s: price guard replaced a sentence quoting %s", self.info.call_id, unsupported)
+            log.warning("call %s: fact guard replaced a sentence quoting unsupported figures %s",
+                        self.info.call_id, unsupported)
             self.state.action("price_guard")
             return self.plugin.phrases.render("expert_confirm", lang)
         return sentence
@@ -319,7 +327,10 @@ class RealEstateConversation:
             await asyncio.wait(list(self._tasks), timeout=5)
         extraction = Extraction()
         if self.state.caller_turns > 0:
-            extraction = await extract(self.plugin.services.router.primary, record.transcript, self.state.tool_log)
+            provider = self.plugin.services.router.primary
+            if record.cost is not None:
+                provider = MeteredProvider(provider, record.cost, "post_call")
+            extraction = await extract(provider, record.transcript, self.state.tool_log)
         payload = self.build_record(record, extraction)
         log.info("call %s finished: %s, score %s, prompt %s", self.info.call_id, self.state.call_type,
                  payload.get("leadScore"), PROMPT_VERSION)
@@ -331,7 +342,8 @@ class RealEstateConversation:
                 "transcript": "\n".join(f"{t.get('speaker')}: {t.get('text')}" for t in record.transcript),
                 "requirements": self.state.requirements.known(),
                 "handoverStatus": "PENDING" if payload.get("handoverRequested") else "NOT_REQUESTED",
-                "callbackStatus": "REQUESTED" if payload.get("callbackAt") else "NOT_REQUESTED"})
+                "callbackStatus": "REQUESTED" if payload.get("callbackAt") else "NOT_REQUESTED",
+                "cost": record.cost.summary(cost_prices(self.plugin.settings)) if record.cost is not None else None})
 
 
 def _int(value: Any) -> int | None:

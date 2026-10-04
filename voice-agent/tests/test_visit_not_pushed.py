@@ -1,0 +1,33 @@
+"""Riya offers a visit once and follows the caller: details first means details first."""
+
+from app.domain.real_estate import flows
+from app.domain.real_estate.conversation import _BOOKING, _DEFER
+from app.domain.real_estate.state import CallState
+
+
+def _visit_stage(**kw) -> CallState:
+    s = CallState(call_type="OUTBOUND_NEW_LEAD")
+    s.stage = "VISIT"
+    for k, v in kw.items():
+        setattr(s, k, v)
+    return s
+
+
+def test_first_the_visit_is_offered():
+    assert "Offer a site visit once" in flows.goal(_visit_stage())
+
+
+def test_after_times_were_offered_riya_stops_selling():
+    goal = flows.goal(_visit_stage(slots_offered_for=["11"]))
+    assert goal == flows.VISIT_OFFERED and "Do not read them again" in goal
+
+
+def test_details_first_means_no_visit_talk():
+    assert flows.goal(_visit_stage(visit_deferred=True, slots_offered_for=["11"])) == flows.VISIT_DEFERRED
+
+
+def test_what_jeel_said_is_recognised_as_details_first():
+    for said in ("मुझे पहले आप detail बताइए", "आप मुझे details बताइए 2 BHK और 3 BHK की",
+                 "अभी नहीं, बाद में", "first tell me the price"):
+        assert _DEFER.search(said), said
+    assert _BOOKING.search("site visit book कर दो")

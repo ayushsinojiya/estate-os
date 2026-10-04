@@ -14,7 +14,7 @@ from app.crm.ingest import CallIngest
 from app.crm.mock import MockCrm
 from app.domain.base import CallInfo
 from app.llm.base import Message
-from app.outbound.registry import NO_ANSWER, OutboundRecord
+from app.outbound.registry import NO_ANSWER, OutboundRecord, phone_tail
 from app.outbox.outbox import PermanentFailure
 from app.rag.client import FakeKnowledge, HttpKnowledge
 
@@ -31,13 +31,17 @@ log = logging.getLogger(__name__)
 INGEST = "crm_ingest"
 
 
+# Spoken when neither BUILDER_NAME nor the CRM workspace gives a name.
+FALLBACK_BUILDER = "XYZ Realty"
+
+
 class RealEstatePlugin:
     name = "real_estate"
 
     def __init__(self, services: "EngineServices"):
         self.services = services
         self.settings = s = services.settings
-        self.phrases = RealEstatePhrases(s.builder_name, s.disclose_ai, s.disclose_recording)
+        self.phrases = RealEstatePhrases(s.builder_name or FALLBACK_BUILDER, s.disclose_ai, s.disclose_recording)
         if s.crm_mode == "http":
             self.crm: Any = HttpCrm(s.crm_base_url, s.crm_workspace_id, s.crm_service_email, s.crm_service_password,
                                     refresh_margin_s=s.crm_token_refresh_margin_s,
@@ -62,9 +66,10 @@ class RealEstatePlugin:
     async def start(self) -> None:
         try:
             name = await asyncio.wait_for(self.crm.workspace_name(), 5)
-            if name:
+            # A configured BUILDER_NAME is deliberate; only a blank one defers to the workspace name.
+            if name and not self.settings.builder_name:
                 # "Westhaven Realty · Demo" → "Westhaven Realty"
-                self.phrases.builder_name = name.split("·")[0].strip() or self.settings.builder_name
+                self.phrases.builder_name = name.split("·")[0].strip() or FALLBACK_BUILDER
             self.crm_ok_at = time.time()
         except Exception as exc:  # noqa: BLE001 - the fallback name keeps the agent usable
             log.warning("CRM not reachable at start (%r); speaking as %s", exc, self.phrases.builder_name)
@@ -137,7 +142,8 @@ class RealEstatePlugin:
     async def may_dial(self, record: OutboundRecord) -> tuple[bool, str | None]:
         """TRAI hours and the CRM's do-not-call list, checked right before every dial."""
         s = self.settings
-        if not within_calling_hours(now_ist(), s.calling_hours_start, s.calling_hours_end):
+        if not within_calling_hours(now_ist(), s.calling_hours_start, s.calling_hours_end) \
+                and not self._is_test_phone(record.phone):
             return False, "OUTSIDE_CALLING_HOURS"
         try:
             if await asyncio.wait_for(self.crm.check_dnc(record.phone), 3):
@@ -147,6 +153,14 @@ class RealEstatePlugin:
             log.warning("do-not-call check unavailable (%r); not dialling %s", exc, record.request_id)
             return False, "DNC_CHECK_UNAVAILABLE"
         return True, None
+
+    def _is_test_phone(self, phone: str) -> bool:
+        tail = phone_tail(phone)
+        allowed = {phone_tail(p) for p in self.settings.test_phone_allowlist.split(",") if phone_tail(p)}
+        if tail and tail in allowed:
+            log.info("outside calling hours, but %s is an allow-listed test number", "…" + tail[-4:])
+            return True
+        return False
 
     async def on_outbound_update(self, record: OutboundRecord) -> None:
         """An outbound call nobody answered still goes on the record; the CRM decides on a retry."""
