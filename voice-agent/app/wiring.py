@@ -78,6 +78,7 @@ class Container:
             llm_temperature=s.llm_temperature,
             devanagari_speech=_devanagari_speech(s),
             speech_english_words=_speech_english_words(s),
+            speech_number_words=_speech_english_words(s),
             turn_config=TurnConfig(),
             silence_first_prompt_s=s.silence_first_prompt_s,
             silence_interval_s=s.silence_prompt_interval_s,
@@ -148,11 +149,12 @@ def _speech_text(s: Settings, phrases: PhraseBook):
     if not _devanagari_speech(s):
         return lambda text, _lang: text
     english = _speech_english_words(s)
-    return lambda text, lang: to_devanagari_speech(text, lang, phrases.names, english)
+    return lambda text, lang: to_devanagari_speech(text, lang, phrases.names, english, english)
 
 
 def _speech_english_words(s: Settings) -> bool:
-    """Respell English words in Devanagari for the TTS? Sarvam yes; Rumik reads them better in Latin."""
+    """Respell English words in Devanagari and numbers as words for the TTS? Sarvam yes. Rumik: English
+    words stay in Latin (measured) and numbers stay digits with Hindi units ("76.5 लाख", chosen by ear)."""
     return s.tts_primary != "rumik"
 
 
