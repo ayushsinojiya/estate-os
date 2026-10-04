@@ -71,9 +71,6 @@ PLAIN = {
     "SARVAM_TTS_SPEAKER": "ishita",
     "RUMIK_MODEL": "mulberry",
     "RUMIK_SPEED": "1.2",
-    # A preset voice keeps Rumik's pitch steady (blank rebuilds the voice per request); 0.6 is Rumik's default.
-    "RUMIK_SPEAKER": "",
-    "RUMIK_TEMPERATURE": "0.6",
     "NOVA3_FLOOR_PASSED": "false",
     "VOICE_LINK_CAPTURE_MESSAGES": "20",
     # Which TTS engine actually speaks. The code default is sarvam_streaming, so leaving this
@@ -92,10 +89,8 @@ PLAIN = {
     "SARVAM_STT_STREAMING_LANGUAGE_CODE": "unknown",
     # High sensitivity turned background noise on phone lines into "speech" (and interruptions).
     "SARVAM_STT_HIGH_VAD_SENSITIVITY": "false",
-    # Speech without recognisable words must last this long to interrupt Riya. 300 ms: the caller
-    # speaking stops her almost at once (600 ms felt like she was not listening); noise transcripts
-    # are filtered separately, so they no longer need a long threshold.
-    "BARGE_IN_MIN_SPEECH_MS": "300",
+    # Speech without recognisable words must last this long to interrupt Riya (noise is shorter).
+    "BARGE_IN_MIN_SPEECH_MS": "600",
     "STT_FLUSH_AFTER_MS": "150",
     "GOOGLE_CLOUD_PROJECT": "",
     "GOOGLE_CLOUD_LOCATION": "asia-south1",

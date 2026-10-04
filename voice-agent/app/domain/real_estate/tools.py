@@ -157,9 +157,7 @@ class ToolBox:
                                        "instruction": "Apologise briefly and say our team will confirm."})
             self.s.tool_log.append({"tool": name, "args": arguments,
                                     "result": {k: v for k, v in outcome.content.items() if k != "chunks"}})
-            # Prices come from the CRM only: a brochure's figures may support an area or a count,
-            # never a rupee amount (a document's "Type A ₹92 lakh" was once quoted for the wrong project).
-            self.s.guard.add_result(outcome.content, prices=name != "ask_knowledge")
+            self.s.guard.add_result(outcome.content)
             self.c.advance()
             return outcome
 
@@ -197,19 +195,14 @@ class ToolBox:
         options = [{"project": m["projectName"], "projectId": m["projectId"], "locality": m.get("localityName"),
                     "bhk": m["bhk"], "price": spoken_range(m["priceMinInr"], m["priceMaxInr"]),
                     "priceMinInr": m["priceMinInr"], "priceMaxInr": m["priceMaxInr"],
-                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate"),
-                    # The CRM ranks options within budget first; near misses (up to 10% over) follow.
-                    "withinBudget": bool(m.get("withinBudget", not budget or m["priceMinInr"] <= budget))}
-                   for m in matches]
+                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate")} for m in matches]
         self.s.recommended = options
         self.s.budget_fits = bool(budget) and any(o["priceMinInr"] <= budget * 1.1 for o in options)
         self.s.action("search_properties")
         if not options:
             return ToolOutcome({"options": [], "instruction": "Nothing available matches; ask which requirement "
                                                               "they could relax, or offer a callback."})
-        return ToolOutcome({"options": options, "note": "Recommend at most two, preferring withinBudget ones. "
-                            "Only say an option is in their budget when withinBudget is true; otherwise say it is "
-                            "slightly above their budget."})
+        return ToolOutcome({"options": options, "note": "Recommend at most two."})
 
     async def get_project_info(self, a: ProjectArgs) -> ToolOutcome:
         project = self._project(a.project)
@@ -275,16 +268,7 @@ class ToolBox:
         project = self._project(a.project)
         if project is None:
             return self._unknown_project(a.project)
-        about_existing_visit = self.s.call_type == "VISIT_REMINDER" or bool(self.s.context.get("visit"))
-        if not a.preferred_day and not self.s.wants_visit_now and not about_existing_visit:
-            if not self.s.slots_offered_for:
-                # "Show me the Baner one" asks about the project, not for a visit. No "slots" key: an empty
-                # list was once read out as "no slots are available".
-                return ToolOutcome({"project": project["name"], "visitTimesLookedUp": False,
-                                    "instruction": "Visit times exist but were not looked up, because the caller has "
-                                                   "not asked for a visit. Never say no slots are available. Answer "
-                                                   "what they asked, then ask once whether they would like to visit; "
-                                                   "call get_visit_slots after they say yes."})
+        if not a.preferred_day and not self.s.wants_visit_now:
             if self.s.visit_deferred:
                 return ToolOutcome({"project": project["name"], "slots": [],
                                     "instruction": "The caller wants details first. Do not offer visit times now; "

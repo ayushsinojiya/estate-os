@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import logging
 from typing import AsyncIterator
 
@@ -28,60 +27,15 @@ from app.tts.base import TTSError
 log = logging.getLogger(__name__)
 
 
-# Spellings Mulberry pronounces recognisably, chosen by measurement: each word was synthesised in
-# several spellings (speaker siya, temperature 0.4) and the audio transcribed by Sarvam STT. Latin won
-# for "site visit" (4/4 vs 0/4 for साइट विजिट), "slot" (2/2 vs 0/2 for स्लॉट) and "amenities";
-# Devanagari won for possession (पज़ेशन 2/2, Latin 0/2), assistant and area. Applied to every text,
-# after the engine's own Devanagari speech conversion.
-_PRONUNCIATION: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(p, re.I), r) for p, r in [
-        (r"(?:साइट|साईट|site)[\s-]*(?:विज़िट|विजिट|वीज़िट|visit)(?:्स)?", "site visit"),
-        (r"(?<![\w\u0900-\u097f])(?:विज़िट|विजिट|वीज़िट)(?![\u0900-\u097f])", "visit"),
-        (r"(?<![\w\u0900-\u097f])(?:स्लॉट्स|स्लोट्स)(?![\u0900-\u097f])", "slots"),
-        (r"(?<![\w\u0900-\u097f])(?:स्लॉट|स्लोट)(?![\u0900-\u097f])", "slot"),
-        (r"(?<![\w\u0900-\u097f])(?:अमेनिटीज़|अमेनिटीज|एमेनिटीज़|एमेनिटीज)(?![\u0900-\u097f])", "amenities"),
-        (r"\bpossession\b|(?<![\u0900-\u097f])(?:पोज़ेशन|पोजेशन|पजेशन|पोसेशन)(?![\u0900-\u097f])", "पज़ेशन"),
-        # Chosen by ear (ira, mia, sophia): "assistent" in Latin; every Devanagari spelling sounded off.
-        (r"\bassistants?\b|(?<![\u0900-\u097f])(?:असिस्टेंट|असिस्टैंट|असिस्टन्ट|एसिस्टेंट)(?![\u0900-\u097f])", "assistent"),
-        (r"\bareas?\b|(?<![\u0900-\u097f])एरीया(?![\u0900-\u097f])", "एरिया"),
-        # "एआई" was recognised 1/3, "AI" / "A I" 3/3; "रेरा" 3/3 vs "RERA" 2/3.
-        (r"(?<![\u0900-\u097f])एआई(?![\u0900-\u097f])", "AI"),
-        (r"\bRERA\b", "रेरा"),
-        # "ब्रोशर" 3/3 with mia and sophia; Latin "brochure" 2/3 with sophia.
-        (r"\bbrochures?\b", "ब्रोशर"),
-        # Pune localities: Latin was misread for these six; Devanagari for the others was (by STT,
-        # sophia, 2026-10-04). Hinjewadi, Wagholi, Kothrud stay Latin.
-        (r"\b[WV]akad\b|(?<![\u0900-\u097f])(?:वाकड़|वाकड)(?![\u0900-\u097f])", "वाकड"),
-        (r"\bBaner\b|(?<![\u0900-\u097f])(?:बानेर|बाणेर)(?![\u0900-\u097f])", "बाणेर"),
-        (r"\bKharadi\b|(?<![\u0900-\u097f])(?:खराड़ी|खराडी)(?![\u0900-\u097f])", "खराडी"),
-        (r"\bRavet\b|(?<![\u0900-\u097f])(?:रावेत|रावेट)(?![\u0900-\u097f])", "रावेट"),
-        (r"\bHadapsar\b|(?<![\u0900-\u097f])(?:हडपसर|हड़पसर)(?![\u0900-\u097f])", "हड़पसर"),
-        (r"\bMagarpatta\b|(?<![\u0900-\u097f])(?:मगरपट्टा|मगरपट्ट)(?![\u0900-\u097f])", "मगरपट्टा"),
-        (r"(?<![\u0900-\u097f])(?:हिंजवडी|हिंजेवाड़ी|हिंजवाड़ी|हिंजेवाडी)(?![\u0900-\u097f])", "Hinjewadi"),
-        (r"(?<![\u0900-\u097f])(?:वाघोली|वाघौली)(?![\u0900-\u097f])", "Wagholi"),
-        (r"(?<![\u0900-\u097f])(?:कोथरूड|कोथरुड)(?![\u0900-\u097f])", "Kothrud"),
-    ]
-]
-
-
-def rumik_pronunciation(text: str) -> str:
-    for pattern, replacement in _PRONUNCIATION:
-        text = pattern.sub(replacement, text)
-    return text
-
-
 class RumikTTS:
     def __init__(self, api_key: str, base_url: str, model: str, description: str, speaker: str = "",
-                 http: httpx.AsyncClient | None = None, temperature: float | None = None):
+                 http: httpx.AsyncClient | None = None):
         self.name = "rumik"
         self._api_key = api_key
         self._base = base_url.rstrip("/")
         self._model = model
         self._description = description
-        # Without a preset speaker the voice is rebuilt from the description on every request, so its
-        # pitch drifts from sentence to sentence; a speaker (and a lower temperature) keeps it steady.
         self._speaker = speaker
-        self._temperature = temperature
         self._http = http or httpx.AsyncClient(timeout=5.0)
         self._ws = None
         self._drain_before_next = False
@@ -107,7 +61,6 @@ class RumikTTS:
             return
 
     async def synthesize(self, text: str, language: Lang) -> AsyncIterator[bytes]:
-        text = rumik_pronunciation(text)
         async with self._lock:
             if self._ws is None or self._ws.state.name != "OPEN":
                 await self._connect(text)
@@ -117,8 +70,6 @@ class RumikTTS:
             frame = {"text": text, "model": self._model, "description": self._description}
             if self._speaker:
                 frame["speaker"] = self._speaker
-            if self._temperature is not None:
-                frame["temperature"] = self._temperature
             try:
                 await self._ws.send(json.dumps(frame, ensure_ascii=False))
                 async for msg in self._ws:

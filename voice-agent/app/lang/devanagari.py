@@ -9,7 +9,6 @@ known project/locality names get their Devanagari spelling, short capitalised ac
 from __future__ import annotations
 
 import re
-from datetime import time
 from collections.abc import Mapping
 
 from app.lang import spoken
@@ -56,10 +55,8 @@ _PHONE_RE = re.compile(r"(?<![\d.,])\d{2,5}(?:[ -]\d{2,5}){1,3}(?![\d.,])")
 # Unformatted runs of 6+ digits (PIN codes, codes) and anything with a leading zero are read digit by digit.
 _DIGITS_RE = re.compile(r"(?<![\d.,])(?:0\d+|\d{6,})(?![\d.,])")
 _PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
-_TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)(?:\s*(AM|PM|am|pm)\b)?(?:\s*(?:बजे|वाजता))?")
-_HOUR_RE = re.compile(r"(?<![\d.:])(\d{1,2})\s*(AM|PM|am|pm)\b(?:\s*(?:बजे|वाजता))?")
-# Number units are always spoken in the call language, even inside an English-heavy sentence.
-_UNIT_RE = re.compile(r"\b(lakhs?|crores?)\b", re.I)
+_TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)(?:\s*(?:AM|PM|am|pm)\b)?(?:\s*(?:बजे|वाजता))?")
+_HOUR_RE = re.compile(r"(?<![\d.:])(\d{1,2})\s*(?:AM|PM|am|pm)\b(?:\s*(?:बजे|वाजता))?")
 _ROUND_THE_CLOCK_RE = re.compile(r"\b24\s*[x×]\s*7\b", re.I)
 _NUMBER_RE = re.compile(r"\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?")
 _LATIN_RE = re.compile(r"[A-Za-z]+")
@@ -108,69 +105,6 @@ def _number_words(raw: str, lang: Lang) -> str:
     return spoken.integer_words(int(value), lang)
 
 
-_DAY_PARTS = ("सुबह", "दोपहर", "शाम", "रात", "सकाळी", "दुपारी", "संध्याकाळी", "रात्री")
-
-
-def _clock(match: re.Match[str], minute: int, meridiem: str | None, lang: Lang) -> str:
-    # "सुबह 10 AM": the sentence already says the time of day, so it is not said twice.
-    if match.string[:match.start()].rstrip().endswith(_DAY_PARTS):
-        meridiem = None
-    return _clock_words(int(match.group(1)), minute, meridiem, lang)
-
-
-def _clock_words(hour: int, minute: int, meridiem: str | None, lang: Lang) -> str:
-    """"10 AM" -> "सुबह दस बजे", "2 PM" -> "दोपहर दो बजे", "6:30 PM" -> "शाम साढ़े छह बजे"."""
-    if meridiem and 1 <= hour <= 12 and 0 <= minute < 60:
-        h24 = hour % 12 + (12 if meridiem.lower() == "pm" else 0)
-        return spoken.time_words(time(h24, minute), lang)
-    return _time_words(hour, minute, lang)
-
-
-def _clock_digits(match: re.Match[str], minute: int | None, meridiem: str | None, lang: Lang) -> str:
-    """"4 PM" -> "शाम 4 बजे", "6:30 PM" -> "शाम 6:30 बजे", "10 AM" -> "सुबह 10 बजे" (digits kept)."""
-    hour = int(match.group(1))
-    clock = f"{hour}:{minute:02d}" if minute else str(hour)
-    suffix = "वाजता" if lang == "mr" else "बजे"
-    if not meridiem or not 1 <= hour <= 12:
-        return f"{clock} {suffix}"
-    part = spoken._day_part(hour % 12 + (12 if meridiem.lower() == "pm" else 0), lang)
-    if match.string[:match.start()].rstrip().endswith(_DAY_PARTS):
-        return f"{clock} {suffix}"
-    return f"{part} {clock} {suffix}"
-
-
-def _digits_speech(out: str, lang: Lang) -> str:
-    """Numbers stay digits (chosen by ear for Rumik: "76.5 लाख", "640 sq ft", "शाम 4 बजे"); only the
-    units, times and symbols around them are put in Hindi/Marathi."""
-    unit = lambda word: _WORDS[word.lower()][0 if lang == "mr" else 1]  # noqa: E731
-    out = _RANGE_RE.sub(" ते " if lang == "mr" else " से ", out)
-    out = _MONEY_RE.sub(lambda m: _money_digits(m, lang), out)
-    out = _PERCENT_RE.sub(lambda m: f"{m.group(1)} {'टक्के' if lang == 'mr' else 'प्रतिशत'}", out)
-    out = _TIME_RE.sub(lambda m: _clock_digits(m, int(m.group(2)), m.group(3), lang), out)
-    out = _HOUR_RE.sub(lambda m: _clock_digits(m, 0, m.group(2), lang), out)
-    out = _UNIT_RE.sub(lambda m: unit(m.group(1)), out)
-    out = re.sub(r"(बजे|वाजता)\s+को(?=[\s,।?!]|$)", r"\1", out)  # "Sunday 4 PM को" -> "शाम 4 बजे"
-    return re.sub(r"[ \t]{2,}", " ", out).strip()
-
-
-def _money_digits(match: re.Match[str], lang: Lang) -> str:
-    """"₹85,00,000" -> "85 लाख"; "₹1,20,00,000" -> "1.2 करोड़"; "Rs 85 lakh" -> "85 लाख"."""
-    raw, unit_word = match.group(1), (match.group(2) or "").strip()
-    value = float(raw.replace(",", ""))
-    lakh, crore = _WORDS["lakh"][0 if lang == "mr" else 1], _WORDS["crore"][0 if lang == "mr" else 1]
-    if unit_word:
-        return f"{_trim_number(value)} {lakh if unit_word.lower().startswith(('lakh', 'लाख')) else crore}"
-    if value >= 10_000_000:
-        return f"{_trim_number(value / 10_000_000)} {crore}"
-    if value >= 100_000:
-        return f"{_trim_number(value / 100_000)} {lakh}"
-    return f"{_trim_number(value)} {'रुपये' if lang == 'hi' else 'रुपये'}"
-
-
-def _trim_number(value: float) -> str:
-    return f"{value:.2f}".rstrip("0").rstrip(".")
-
-
 def _time_words(hour: int, minute: int, lang: Lang) -> str:
     h = spoken.integer_words(hour, lang)
     if lang == "mr":
@@ -212,26 +146,16 @@ def _money(match: re.Match[str], lang: Lang) -> str:
     return " ".join(part for part in (amount, unit_word, "रुपये") if part)
 
 
-def to_devanagari_speech(text: str, lang: Lang, names: "Mapping[str, str] | None" = None,
-                         english_words: bool = True, number_words: bool = True) -> str:
-    """english_words=False keeps English words (and project names) in Latin letters and converts only
-    numbers, times and lakh/crore: Rumik reads Hinglish best that way (measured: Hindi script with
-    English words in Latin 30/34 key words recognised, everything in Devanagari 28/34)."""
+def to_devanagari_speech(text: str, lang: Lang, names: "Mapping[str, str] | None" = None) -> str:
     if lang not in ("mr", "hi") or not text:
         return text
     out = text.translate(_DEV_DIGITS)
-    # An all-English sentence is left to the TTS. A Hinglish one ("Sunday 10 AM, Monday 2 PM, या
-    # Tuesday 6 PM", "1 crore 5 lakh से 1 crore 15 lakh") still has its numbers, times and lakh/crore
-    # spoken in Hindi/Marathi words, computed here rather than by the model (which wrote 76.5 lakh as
-    # "सात सौ पैंसठ" and 6 PM as "पाँच बजे"). Its English words are left as they are.
-    if not _DEVANAGARI.search(out):
+    # An English sentence is left to the TTS: transliterating a few of its words only garbles it.
+    if not _DEVANAGARI.search(out) or len(_DEVANAGARI.findall(out)) < len(_LATIN_RE.sub("", out)) * 0.2:
         return out
-    english_heavy = (len(_DEVANAGARI.findall(out)) < len(_LATIN_RE.sub("", out)) * 0.2) or not english_words
-    if names and english_words:
+    if names:
         for pattern, dev in _names(names):
             out = pattern.sub(dev, out)
-    if not number_words:
-        return _digits_speech(out, lang)
     out = _ROUND_THE_CLOCK_RE.sub("चोवीस तास" if lang == "mr" else "चौबीसों घंटे", out)
     out = _CODE_RE.sub(lambda m: _code_words(m.group(0), lang), out)
     out = _PHONE_RE.sub(lambda m: _phone(m, lang), out)
@@ -240,12 +164,9 @@ def to_devanagari_speech(text: str, lang: Lang, names: "Mapping[str, str] | None
     out = _MONEY_RE.sub(lambda m: _money(m, lang), out)
     out = _DIGITS_RE.sub(lambda m: _digit_words(m.group(0), lang), out)
     out = _PERCENT_RE.sub(lambda m: f"{_number_words(m.group(1), lang)} {'टक्के' if lang == 'mr' else 'प्रतिशत'}", out)
-    out = _TIME_RE.sub(lambda m: _clock(m, int(m.group(2)), m.group(3), lang), out)
-    out = _HOUR_RE.sub(lambda m: _clock(m, 0, m.group(2), lang), out)
+    out = _TIME_RE.sub(lambda m: _time_words(int(m.group(1)), int(m.group(2)), lang), out)
+    out = _HOUR_RE.sub(lambda m: _time_words(int(m.group(1)), 0, lang), out)
     out = _NUMBER_RE.sub(lambda m: _number_words(m.group(0), lang), out)
-    if english_heavy:
-        out = _UNIT_RE.sub(lambda m: _WORDS[m.group(1).lower()][0 if lang == "mr" else 1], out)
-    else:
-        out = _LATIN_RE.sub(lambda m: _latin_word(m.group(0), lang), out)
+    out = _LATIN_RE.sub(lambda m: _latin_word(m.group(0), lang), out)
     out = _SPOKEN_RANGE_RE.sub(" ते " if lang == "mr" else " से ", out)
     return re.sub(r"[ \t]{2,}", " ", out).strip()

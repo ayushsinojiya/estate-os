@@ -77,8 +77,6 @@ class Container:
             llm_max_tokens=s.llm_max_tokens,
             llm_temperature=s.llm_temperature,
             devanagari_speech=_devanagari_speech(s),
-            speech_english_words=_speech_english_words(s),
-            speech_number_words=_speech_english_words(s),
             turn_config=TurnConfig(),
             silence_first_prompt_s=s.silence_first_prompt_s,
             silence_interval_s=s.silence_prompt_interval_s,
@@ -124,14 +122,12 @@ class Container:
                                     s.sarvam_tts_preprocessing)
         if s.tts_primary == "rumik" and s.rumik_api_key:
             rumik = RumikTTS(s.rumik_api_key, s.rumik_base_url, s.rumik_model,
-                             s.rumik_voice_description, s.rumik_speaker,
-                             temperature=s.rumik_temperature)
+                             s.rumik_voice_description, s.rumik_speaker)
             return FailoverTTS(rumik, bulbul)
         # Bulbul primary, Rumik behind it when a key is configured.
         if s.rumik_api_key:
             return FailoverTTS(bulbul, RumikTTS(s.rumik_api_key, s.rumik_base_url, s.rumik_model,
-                                                s.rumik_voice_description, s.rumik_speaker,
-                             temperature=s.rumik_temperature))
+                                                s.rumik_voice_description, s.rumik_speaker))
         return FailoverTTS(bulbul, bulbul)
 
     def track(self, task) -> None:
@@ -148,14 +144,7 @@ def _speech_text(s: Settings, phrases: PhraseBook):
     """The text actually synthesised for a phrase, matching what a call speaks."""
     if not _devanagari_speech(s):
         return lambda text, _lang: text
-    english = _speech_english_words(s)
-    return lambda text, lang: to_devanagari_speech(text, lang, phrases.names, english, english)
-
-
-def _speech_english_words(s: Settings) -> bool:
-    """Respell English words in Devanagari and numbers as words for the TTS? Sarvam yes. Rumik: English
-    words stay in Latin (measured) and numbers stay digits with Hindi units ("76.5 लाख", chosen by ear)."""
-    return s.tts_primary != "rumik"
+    return lambda text, lang: to_devanagari_speech(text, lang, phrases.names)
 
 
 def _require(settings: Settings) -> None:
@@ -214,9 +203,7 @@ def build_container(settings: Settings, plugin_factory: PluginFactory | None = N
         voicelink = (VoiceLinkClient(settings.voice_link_base_url, settings.voice_link_username,
                                      settings.voice_link_password)
                      if settings.voice_link_username else None)
-        # The phrase cache is per voice: a different Rumik speaker must not replay clips in the old voice.
-        voice_id = (f"rumik_{settings.rumik_model}_{settings.rumik_speaker or 'described'}_v2"
-                    if settings.tts_primary == "rumik"
+        voice_id = (f"rumik_{settings.rumik_model}" if settings.tts_primary == "rumik"
                     else f"sarvam_{settings.sarvam_tts_model.replace(':', '')}_{settings.sarvam_tts_speaker}")
     else:
         primary, fallback, voicelink, voice_id = DemoLLM("sarvam"), None, None, "fake"

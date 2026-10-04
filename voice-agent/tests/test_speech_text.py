@@ -16,7 +16,7 @@ from app.lang.devanagari import to_devanagari_speech
     ("साइट ऑफिस 1800-419-2266 पर।", "एक आठ शून्य शून्य, चार एक नौ, दो दो छह छह"),
     ("पिन 411038 है।", "चार एक एक शून्य तीन आठ"),
     ("डाउन पेमेंट 7.50% है।", "साढ़े सात प्रतिशत"),
-    ("सुबह 10 AM से 4 PM तक।", "सुबह दस बजे से शाम चार बजे"),
+    ("सुबह 10 AM से 4 PM तक।", "दस बजे से चार बजे"),
     ("24x7 सिक्योरिटी है।", "चौबीसों घंटे"),
 ])
 def test_hindi_figures_are_spoken_correctly(text, heard):
@@ -52,15 +52,3 @@ def test_a_phone_number_is_not_turned_into_a_range():
 def test_a_project_name_is_spoken_in_devanagari():
     names = {"Baner": "बाणेर"}
     assert "बाणेर" in to_devanagari_speech("Baner में दो BHK है।", "hi", names)
-
-
-def test_hinglish_numbers_times_and_units_are_spoken_in_hindi():
-    from app.lang.devanagari import to_devanagari_speech as speech
-    assert speech("Sunday 10 AM, Monday 2 PM, या Tuesday 6 PM", "hi") == \
-        "Sunday सुबह दस बजे, Monday दोपहर दो बजे, या Tuesday शाम छह बजे"
-    assert speech("1 crore 5 lakh से 1 crore 15 lakh", "hi") == "एक करोड़ पाँच लाख से एक करोड़ पंद्रह लाख"
-    assert "सात सौ बीस" in speech("2 BHK का carpet area 720 sq ft है।", "hi")
-    assert speech("Skyline Crest 76.5 lakh से 82 lakh", "hi") == "Skyline Crest साढ़े छिहत्तर लाख से बयासी लाख"
-    assert speech("Cedar Grove 85 से 90 lakh", "hi") == "Cedar Grove पचासी से नब्बे लाख"
-    assert speech("रविवार सकाळी 10 AM", "mr") == "रविवार सकाळी दहा वाजता"
-    assert speech("The visit is at 10 AM on Sunday.", "hi") == "The visit is at 10 AM on Sunday."

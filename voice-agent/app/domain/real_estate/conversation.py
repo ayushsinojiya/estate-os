@@ -53,10 +53,6 @@ _OPENINGS: dict[str, dict[str, str]] = {
 _TOPIC_FALLBACK = {"en": "a home with us", "hi": "घर", "mr": "घर"}
 _BOOKING = re.compile(r"(site\s*visit|visit\s+(?:karna|book|schedule)|dekhne\s+aana|dekhna\s+hai|"
                       r"विज़िट|विजिट|व्हिजिट|पाहायला\s+यायचं|જોવા\s+આવવું|વિઝિટ)", re.I)
-# Riya asked whether they would like to visit, and a short yes to that.
-_VISIT_QUESTION = re.compile(r"(visit|विज़िट|विजिट|व्हिजिट|देखने|पाहायला)[^?।]*(\?|चाहेंगे|चाहेंगी|करायची|करना है|करें(?=$|[\s,.!?।]))", re.I)
-_YES = re.compile(r"^\W*(?:हाँ|हां|हा|जी|ji|haan|han|yes|yeah|ok|okay|ओके|ठीक|theek|sure|ज़रूर|जरूर|बिल्कुल|चलेगा|"
-                  r"chalega|कर\s+(?:दीजिए|दो|दीजिये)|हो|hoy)(?=$|[\s,.!?।])", re.I)
 # "Tell me the details first", "later", "not now": the caller is not ready to book.
 _DEFER = re.compile(r"(पहले\s+(?:आप\s+)?(?:मुझे\s+)?(?:detail|डिटेल)|(?:details?|डिटेल्स?|जानकारी)\s+(?:बताइए|बताओ|बता\s+दो|"
                     r"दीजिए|दो|चाहिए)|pehle\s+details?|details?\s+(?:batao|bataiye|chahiye)|बाद\s+में|baad\s+mein|"
@@ -165,7 +161,7 @@ class RealEstateConversation:
         s = self.state
         s.language = lang
         s.caller_turns += 1
-        s.guard.add_caller_text(text)  # the caller's own figures (their budget) may be read back
+        s.guard.add_text(text)  # the caller's own figures (their budget) may be read back
         if wants_dnc(text):
             self.background(self.mark_dnc("explicit request on the call"))
             self.advance()
@@ -192,10 +188,7 @@ class RealEstateConversation:
             s.handover_reason = s.handover_reason or topic
             if topic not in s.escalations:
                 s.escalations.append(topic)
-        # A visit is wanted when the caller asks for one, or says yes to Riya's question about it.
-        s.wants_visit_now = bool(_BOOKING.search(text)) or (s.visit_question_asked and bool(_YES.search(text))
-                                                            and not _DEFER.search(text))
-        s.visit_question_asked = False
+        s.wants_visit_now = bool(_BOOKING.search(text))
         if s.wants_visit_now:
             s.asked_to_book = True
             s.visit_deferred = False
@@ -211,16 +204,13 @@ class RealEstateConversation:
     def screen_reply(self, sentence: str, lang: Lang) -> str:
         unsupported = self.state.guard.unsupported(sentence)
         if unsupported:
-            log.warning("call %s: fact guard replaced a sentence quoting unsupported figures %s "
-                        "(sentence %r; amounts in evidence %s)", self.info.call_id, unsupported,
-                        sentence[:160], sorted(self.state.guard.evidence)[:20])
+            log.warning("call %s: fact guard replaced a sentence quoting unsupported figures %s",
+                        self.info.call_id, unsupported)
             self.state.action("price_guard")
             return self.plugin.phrases.render("expert_confirm", lang)
         return sentence
 
     def on_agent_reply(self, text: str) -> None:
-        if _VISIT_QUESTION.search(text or ""):
-            self.state.visit_question_asked = True
         self.advance()
 
     # ---------------------------------------------------------------- do-not-call
