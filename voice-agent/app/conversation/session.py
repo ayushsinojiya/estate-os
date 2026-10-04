@@ -122,6 +122,7 @@ class CallSession:
         self._ending = False
         self._pending_end: ToolOutcome | None = None
         self._goodbye_said = False
+        self._variant_turns: dict[str, int] = {}
         self.cost = CostMeter()
         self._tasks: list[asyncio.Task] = []
         self._reply: asyncio.Task | None = None
@@ -138,7 +139,16 @@ class CallSession:
         await self.speech.speak_text(self._spoken(text, lang), lang, phrase_key=phrase_key)
 
     async def _say_phrase(self, key: str, lang: Lang) -> None:
+        key = self._next_variant(key)
         await self._say(self.deps.phrases.render(key, lang), lang, phrase_key=key)
+
+    def _next_variant(self, key: str) -> str:
+        """Rotate through a phrase's versions within the call: "let me check" in a different wording each time."""
+        variants = getattr(self.deps.phrases, "variants", None)
+        options = variants(key) if variants else (key,)
+        n = self._variant_turns.get(key, 0)
+        self._variant_turns[key] = n + 1
+        return options[n % len(options)]
 
     async def _on_silence(self, count: int) -> None:
         """Nudge a quiet caller; the watchdog gives up after its configured number of prompts.

@@ -197,14 +197,19 @@ class ToolBox:
         options = [{"project": m["projectName"], "projectId": m["projectId"], "locality": m.get("localityName"),
                     "bhk": m["bhk"], "price": spoken_range(m["priceMinInr"], m["priceMaxInr"]),
                     "priceMinInr": m["priceMinInr"], "priceMaxInr": m["priceMaxInr"],
-                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate")} for m in matches]
+                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate"),
+                    # The CRM ranks options within budget first; near misses (up to 10% over) follow.
+                    "withinBudget": bool(m.get("withinBudget", not budget or m["priceMinInr"] <= budget))}
+                   for m in matches]
         self.s.recommended = options
         self.s.budget_fits = bool(budget) and any(o["priceMinInr"] <= budget * 1.1 for o in options)
         self.s.action("search_properties")
         if not options:
             return ToolOutcome({"options": [], "instruction": "Nothing available matches; ask which requirement "
                                                               "they could relax, or offer a callback."})
-        return ToolOutcome({"options": options, "note": "Recommend at most two."})
+        return ToolOutcome({"options": options, "note": "Recommend at most two, preferring withinBudget ones. "
+                            "Only say an option is in their budget when withinBudget is true; otherwise say it is "
+                            "slightly above their budget."})
 
     async def get_project_info(self, a: ProjectArgs) -> ToolOutcome:
         project = self._project(a.project)
