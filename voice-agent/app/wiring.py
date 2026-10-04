@@ -77,6 +77,7 @@ class Container:
             llm_max_tokens=s.llm_max_tokens,
             llm_temperature=s.llm_temperature,
             devanagari_speech=_devanagari_speech(s),
+            speech_english_words=_speech_english_words(s),
             turn_config=TurnConfig(),
             silence_first_prompt_s=s.silence_first_prompt_s,
             silence_interval_s=s.silence_prompt_interval_s,
@@ -146,7 +147,13 @@ def _speech_text(s: Settings, phrases: PhraseBook):
     """The text actually synthesised for a phrase, matching what a call speaks."""
     if not _devanagari_speech(s):
         return lambda text, _lang: text
-    return lambda text, lang: to_devanagari_speech(text, lang, phrases.names)
+    english = _speech_english_words(s)
+    return lambda text, lang: to_devanagari_speech(text, lang, phrases.names, english)
+
+
+def _speech_english_words(s: Settings) -> bool:
+    """Respell English words in Devanagari for the TTS? Sarvam yes; Rumik reads them better in Latin."""
+    return s.tts_primary != "rumik"
 
 
 def _require(settings: Settings) -> None:

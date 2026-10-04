@@ -167,7 +167,11 @@ def _money(match: re.Match[str], lang: Lang) -> str:
     return " ".join(part for part in (amount, unit_word, "रुपये") if part)
 
 
-def to_devanagari_speech(text: str, lang: Lang, names: "Mapping[str, str] | None" = None) -> str:
+def to_devanagari_speech(text: str, lang: Lang, names: "Mapping[str, str] | None" = None,
+                         english_words: bool = True) -> str:
+    """english_words=False keeps English words (and project names) in Latin letters and converts only
+    numbers, times and lakh/crore: Rumik reads Hinglish best that way (measured: Hindi script with
+    English words in Latin 30/34 key words recognised, everything in Devanagari 28/34)."""
     if lang not in ("mr", "hi") or not text:
         return text
     out = text.translate(_DEV_DIGITS)
@@ -177,8 +181,8 @@ def to_devanagari_speech(text: str, lang: Lang, names: "Mapping[str, str] | None
     # "सात सौ पैंसठ" and 6 PM as "पाँच बजे"). Its English words are left as they are.
     if not _DEVANAGARI.search(out):
         return out
-    english_heavy = len(_DEVANAGARI.findall(out)) < len(_LATIN_RE.sub("", out)) * 0.2
-    if names:
+    english_heavy = (len(_DEVANAGARI.findall(out)) < len(_LATIN_RE.sub("", out)) * 0.2) or not english_words
+    if names and english_words:
         for pattern, dev in _names(names):
             out = pattern.sub(dev, out)
     out = _ROUND_THE_CLOCK_RE.sub("चोवीस तास" if lang == "mr" else "चौबीसों घंटे", out)

@@ -43,6 +43,11 @@ _PRONUNCIATION: list[tuple[re.Pattern[str], str]] = [
         (r"\bpossession\b|(?<![\u0900-\u097f])(?:पोज़ेशन|पोजेशन|पजेशन|पोसेशन)(?![\u0900-\u097f])", "पज़ेशन"),
         (r"\bassistant\b|(?<![\u0900-\u097f])(?:असिस्टैंट|असिस्टन्ट)(?![\u0900-\u097f])", "असिस्टेंट"),
         (r"\bareas?\b|(?<![\u0900-\u097f])एरीया(?![\u0900-\u097f])", "एरिया"),
+        # "एआई" was recognised 1/3, "AI" / "A I" 3/3; "रेरा" 3/3 vs "RERA" 2/3.
+        (r"(?<![\u0900-\u097f])एआई(?![\u0900-\u097f])", "AI"),
+        (r"\bRERA\b", "रेरा"),
+        # "ब्रोशर" 3/3 with mia and sophia; Latin "brochure" 2/3 with sophia.
+        (r"\bbrochures?\b", "ब्रोशर"),
     ]
 ]
 

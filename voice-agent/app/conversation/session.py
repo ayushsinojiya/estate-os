@@ -58,6 +58,8 @@ class SessionDeps:
     llm_max_tokens: int = 220
     llm_temperature: float = 0.2
     devanagari_speech: bool = True
+    # False: English words stay in Latin letters in the speech text (Rumik); only numbers become words.
+    speech_english_words: bool = True
     turn_config: TurnConfig = field(default_factory=TurnConfig)
     silence_first_prompt_s: float = 6.0
     silence_interval_s: float = 5.0
@@ -128,7 +130,7 @@ class CallSession:
     # ---- speech out
 
     def _spoken(self, text: str, lang: Lang) -> str:
-        return (to_devanagari_speech(text, lang, self.deps.phrases.names)
+        return (to_devanagari_speech(text, lang, self.deps.phrases.names, self.deps.speech_english_words)
                 if self.deps.devanagari_speech else text)
 
     async def _say(self, text: str, lang: Lang, phrase_key: str | None = None) -> None:
