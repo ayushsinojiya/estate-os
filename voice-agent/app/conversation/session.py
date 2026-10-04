@@ -25,7 +25,7 @@ from app.conversation.turn_detection import TurnConfig, TurnDetector
 from app.domain.base import (CallerTurnAction, CallInfo, CallRecord, Conversation, PhraseBook, Tool,
                              ToolOutcome)
 from app.lang.devanagari import to_devanagari_speech
-from app.lang.languages import Lang, LanguageTracker, is_noise
+from app.lang.languages import Lang, LanguageTracker, is_noise, to_devanagari_script
 from app.lang.redaction import redact
 from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady, Usage
 from app.observability.cost import CostMeter
@@ -148,6 +148,9 @@ class CallSession:
         """
         if self._ending or self.speech.speaking or (self._reply and not self._reply.done()):
             return
+        # The caller is mid-sentence (voice detected, or words still arriving): not silence.
+        if self.turns.speaking or self.turns.current_text():
+            return
         log.info("call %s: silence prompt %d", self.info.call_id, count)
         await self._say_phrase("still_there" if count > 1 else "silence_prompt", self.lang.current)
 
@@ -214,6 +217,7 @@ class CallSession:
         working: list[Message] = [Message("user", question)]
         reply = ""
         ending = False
+        filler_said = False  # one "let me check" per turn, however many lookups it takes
         try:
             for hop in range(self.deps.max_tool_hops + 1):
                 last_hop = hop == self.deps.max_tool_hops
@@ -273,7 +277,8 @@ class CallSession:
                 working.append(Message("assistant", hop_text, tool_calls=calls))
                 filler = next((tools[c.name].filler for c in calls
                                if c.name in tools and tools[c.name].filler), None)
-                if filler and not hop_text.strip():
+                if filler and not hop_text.strip() and not filler_said and not reply:
+                    filler_said = True
                     yield (_PHRASE, filler)
                 outcomes = await asyncio.gather(*(self._run_tool(tools, c) for c in calls))
                 for call, outcome in zip(calls, outcomes):
@@ -317,11 +322,14 @@ class CallSession:
                     if self._barge_task is None or self._barge_task.done():
                         self._barge_task = asyncio.create_task(self._watch_barge_in())
             elif isinstance(event, PartialTranscript):
-                self.turns.on_partial(event.text)
-                self.barge.on_text(event.text)
+                text = "" if is_noise(event.text) else to_devanagari_script(event.text)
+                self.turns.on_partial(text)
+                self.barge.on_text(text)
             elif isinstance(event, FinalTranscript):
-                self.turns.on_final(event.text, event.language)
-                self.barge.on_text(event.text)
+                # Hindi spelt in another Indic script is converted, not lost; a jumble of scripts is noise.
+                text = "" if is_noise(event.text) else to_devanagari_script(event.text)
+                self.turns.on_final(text, event.language)
+                self.barge.on_text(text)
             elif isinstance(event, SpeechEnded):
                 self.turns.on_speech_end(event.t)
                 self.barge.on_speech_end(event.t)

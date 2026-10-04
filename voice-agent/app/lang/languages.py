@@ -33,14 +33,42 @@ def has_foreign_script(text: str) -> bool:
     return any(lo <= ord(ch) <= hi for ch in text or "" for lo, hi in _FOREIGN_SCRIPT)
 
 
+def _script_of(ch: str) -> int | None:
+    for lo, hi in _FOREIGN_SCRIPT:
+        if lo <= ord(ch) <= hi:
+            return lo
+    return None
+
+
+# Gurmukhi marks without a Devanagari letter at the same offset: addak (consonant doubling) is
+# dropped, tippi is the anusvara.
+_GURMUKHI_MARKS = {"\u0a71": "", "\u0a70": "\u0902"}
+
+
+def to_devanagari_script(text: str) -> str:
+    """Indic scripts share one letter layout (ISCII), so Punjabi, Bengali, Gujarati, Odia... letters map
+    to Devanagari by a fixed offset. The recogniser sometimes writes Hindi speech in another script
+    ("ਸੱਠ ਤੋਂ ਸੱਤਰ ਲੱਖ"); converted, it reads as Hindi instead of being lost."""
+    out = []
+    for ch in text or "":
+        if ch in _GURMUKHI_MARKS:
+            out.append(_GURMUKHI_MARKS[ch])
+            continue
+        base = _script_of(ch)
+        out.append(chr(ord(ch) - base + 0x0900) if base is not None else ch)
+    return "".join(out)
+
+
 def is_noise(text: str) -> bool:
-    """A transcript that is line noise rather than speech: nothing, a single sound ("O", "अ"), or only
-    words in scripts Riya does not speak (what the recogniser emits for background noise).
-    "17 से ਅੱਸੀ ਲੱਖ" is not noise: it carries Hindi words and a number."""
+    """A transcript that is line noise rather than speech: nothing, a single sound ("O", "अ"), or a
+    jumble of several different scripts in one breath ("અ ಆ ಸತ್ಯ"), which is what the recogniser emits
+    for background noise. Speech written in one other Indic script is not noise: it is converted
+    to Devanagari (to_devanagari_script), because it is usually Hindi spelt in the wrong script."""
     toks = tokenize(text or "")
     if not toks:
         return True
-    if all(has_foreign_script(tok) for tok in toks):
+    scripts = {s for ch in text for s in [_script_of(ch)] if s is not None}
+    if len(scripts) >= 2:
         return True
     return len(toks) == 1 and len(toks[0]) <= 1
 
@@ -102,7 +130,11 @@ class LanguageTracker:
         decisive = hinted is not None and lang == hinted
         # A one-word reply ("जी", "ok") or a garbled transcript in another script never switches the
         # call: it once flipped a Hindi call into another language for several turns.
-        substantial = len(tokenize(text)) >= 2 and not has_foreign_script(text)
+        toks = tokenize(text)
+        substantial = len(toks) >= 2 and not has_foreign_script(text)
+        # English needs a real sentence: "Near by" or "Cool" inside a Hindi call is not a switch.
+        if lang == "en" and len(toks) < 3:
+            substantial = False
         if lang and lang != self.current and substantial and (decisive or confidence >= self.switch_confidence):
             self.current = lang
             self.switches += 1

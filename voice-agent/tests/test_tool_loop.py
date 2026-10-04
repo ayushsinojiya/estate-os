@@ -155,3 +155,13 @@ def test_the_last_hop_still_declares_tools():
     s, _ = session(llm, StubConversation(tool_list=[_tool(run, filler=None)]))
     asyncio.run(s._respond("q", "en"))
     assert llm.tools_per_call and all(n == 1 for n in llm.tools_per_call)
+
+
+def test_one_filler_per_turn_however_many_lookups():
+    async def run(args):
+        return ToolOutcome({"ok": True})
+
+    llm = ScriptedLLM([call("lookup", q="a"), call("lookup", q="b"), say("Here it is.")])
+    s, speech = session(llm, StubConversation(tool_list=[_tool(run)]))
+    asyncio.run(s._respond("q", "en"))
+    assert speech.started.count(PHRASES["filler_lookup"]) == 1

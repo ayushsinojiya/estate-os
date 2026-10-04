@@ -92,8 +92,10 @@ PLAIN = {
     "SARVAM_STT_STREAMING_LANGUAGE_CODE": "unknown",
     # High sensitivity turned background noise on phone lines into "speech" (and interruptions).
     "SARVAM_STT_HIGH_VAD_SENSITIVITY": "false",
-    # Speech without recognisable words must last this long to interrupt Riya (noise is shorter).
-    "BARGE_IN_MIN_SPEECH_MS": "600",
+    # Speech without recognisable words must last this long to interrupt Riya. 300 ms: the caller
+    # speaking stops her almost at once (600 ms felt like she was not listening); noise transcripts
+    # are filtered separately, so they no longer need a long threshold.
+    "BARGE_IN_MIN_SPEECH_MS": "300",
     "STT_FLUSH_AFTER_MS": "150",
     "GOOGLE_CLOUD_PROJECT": "",
     "GOOGLE_CLOUD_LOCATION": "asia-south1",
