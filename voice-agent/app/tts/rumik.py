@@ -49,6 +49,17 @@ _PRONUNCIATION: list[tuple[re.Pattern[str], str]] = [
         (r"\bRERA\b", "रेरा"),
         # "ब्रोशर" 3/3 with mia and sophia; Latin "brochure" 2/3 with sophia.
         (r"\bbrochures?\b", "ब्रोशर"),
+        # Pune localities: Latin was misread for these six; Devanagari for the others was (by STT,
+        # sophia, 2026-10-04). Hinjewadi, Wagholi, Kothrud stay Latin.
+        (r"\b[WV]akad\b|(?<![\u0900-\u097f])(?:वाकड़|वाकड)(?![\u0900-\u097f])", "वाकड"),
+        (r"\bBaner\b|(?<![\u0900-\u097f])(?:बानेर|बाणेर)(?![\u0900-\u097f])", "बाणेर"),
+        (r"\bKharadi\b|(?<![\u0900-\u097f])(?:खराड़ी|खराडी)(?![\u0900-\u097f])", "खराडी"),
+        (r"\bRavet\b|(?<![\u0900-\u097f])(?:रावेत|रावेट)(?![\u0900-\u097f])", "रावेट"),
+        (r"\bHadapsar\b|(?<![\u0900-\u097f])(?:हडपसर|हड़पसर)(?![\u0900-\u097f])", "हड़पसर"),
+        (r"\bMagarpatta\b|(?<![\u0900-\u097f])(?:मगरपट्टा|मगरपट्ट)(?![\u0900-\u097f])", "मगरपट्टा"),
+        (r"(?<![\u0900-\u097f])(?:हिंजवडी|हिंजेवाड़ी|हिंजवाड़ी|हिंजेवाडी)(?![\u0900-\u097f])", "Hinjewadi"),
+        (r"(?<![\u0900-\u097f])(?:वाघोली|वाघौली)(?![\u0900-\u097f])", "Wagholi"),
+        (r"(?<![\u0900-\u097f])(?:कोथरूड|कोथरुड)(?![\u0900-\u097f])", "Kothrud"),
     ]
 ]
 

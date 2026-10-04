@@ -38,3 +38,10 @@ def test_numbers_stay_digits_with_hindi_units_and_times_for_rumik():
     assert rumik("Saturday 10 AM या Monday 6:30 PM") == "Saturday सुबह 10 बजे या Monday शाम 6:30 बजे"
     assert rumik("Price ₹85,00,000 है, GST 5% है।") == "Price 85 लाख है, GST 5 प्रतिशत है।"
     assert rumik("सुबह 10 AM मिलते हैं") == "सुबह 10 बजे मिलते हैं"
+
+
+def test_pune_localities_use_the_chosen_spellings():
+    assert p("Wakad, Baner और Kharadi में options हैं") == "वाकड, बाणेर और खराडी में options हैं"
+    assert p("Ravet, Hadapsar, Magarpatta") == "रावेट, हड़पसर, मगरपट्टा"
+    assert p("हिंजवडी, वाघोली और कोथरूड") == "Hinjewadi, Wagholi और Kothrud"
+    assert p("Hinjewadi Phase 2, Undri, Viman Nagar, Pune") == "Hinjewadi Phase 2, Undri, Viman Nagar, Pune"
