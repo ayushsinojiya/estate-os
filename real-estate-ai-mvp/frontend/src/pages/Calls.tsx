@@ -144,8 +144,10 @@ export function CallDetail() {
             </section>
             <CallOutcome call={d} />
             <section className="panel p-6">
-              <h2 className="mb-5">Transcript</h2>
-              <RichContent value={d.transcript} />
+              <h2 className="mb-5" id="transcript-heading">Transcript</h2>
+              <div className="transcript-scroll" role="region" aria-labelledby="transcript-heading" tabIndex={0}>
+                <RichContent value={d.transcript} />
+              </div>
             </section>
           </div>
           <section className="panel p-6 h-fit">

@@ -44,6 +44,9 @@
     margin: 0;
     overflow-x: clip;
   }
+  body:has(.app-shell) {
+    overflow: hidden;
+  }
   button,
   input,
   select,
@@ -320,7 +323,7 @@
     @apply shrink-0 text-[#65776e];
   }
   .date-time-picker-menu {
-    @apply absolute z-30 mt-1.5 grid w-[min(440px,calc(100vw-64px))] grid-cols-[minmax(0,1fr)_98px] gap-x-3 overflow-hidden rounded-lg border border-[#ccd9d2] bg-white p-3 shadow-xl;
+    @apply fixed z-30 grid w-[min(440px,calc(100vw-32px))] grid-cols-[minmax(0,1fr)_98px] gap-x-3 overflow-x-hidden overflow-y-auto rounded-lg border border-[#ccd9d2] bg-white p-3 shadow-xl;
   }
   .date-time-picker-header {
     @apply col-start-1 mb-3 flex items-center justify-between;
@@ -457,6 +460,30 @@
   .detail-columns {
     @apply grid grid-cols-1 xl:grid-cols-[1.65fr_1fr] gap-6;
   }
+  .lead-related-tabs {
+    @apply flex overflow-x-auto border-b border-[#eef1ee] px-4;
+  }
+  .lead-related-tab {
+    @apply shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-[#61726a] hover:text-brand-600;
+  }
+  .lead-related-tab[aria-selected="true"] {
+    @apply border-brand-600 text-brand-600;
+  }
+  @media (max-width: 640px) {
+    .lead-related-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      overflow-x: visible;
+      padding-inline: 0.5rem;
+    }
+    .lead-related-tab {
+      min-width: 0;
+      padding-inline: 0.25rem;
+      line-height: 1.25;
+      text-align: center;
+      white-space: normal;
+    }
+  }
   .person-cell {
     @apply flex items-center gap-3;
   }
@@ -485,6 +512,12 @@
   .transcript-line {
     @apply border-l-2 border-brand-100 pl-4 py-2;
   }
+  .transcript-scroll {
+    max-height: min(24rem, 55vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.5rem;
+  }
   .transcript-line strong {
     @apply block text-xs text-brand-600 mb-2;
   }
@@ -506,7 +539,7 @@
   height: 100dvh;
   min-height: 0;
   max-width: 100%;
-  overflow-x: clip;
+  overflow: hidden;
 }
 .sidebar {
   width: 242px;
@@ -648,10 +681,14 @@
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .topbar {
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   height: 50px;
   padding: 0 38px;
   border-bottom: 1px solid #e6ebe6;
@@ -701,11 +738,11 @@
   color: #0f766e;
 }
 .main-content {
-  flex: 1;
+  flex: 1 0 auto;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: visible;
   padding: 36px 38px 55px;
   max-width: 1700px;
   margin: 0 auto;
@@ -714,10 +751,11 @@ footer {
   flex-shrink: 0;
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   padding: 16px 38px;
   border-top: 1px solid #e5ebe5;
-  font-size: 10px;
-  color: #9daa9f;
+  font-size: 11px;
+  color: #71837a;
 }
 .skip-link {
   position: fixed;
@@ -1502,7 +1540,7 @@ footer {
   }
   footer {
     padding: 15px 18px;
-    font-size: 9px;
+    flex-wrap: wrap;
   }
   .skip-link {
     left: 15px;

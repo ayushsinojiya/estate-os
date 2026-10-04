@@ -3,14 +3,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "../services/query";
-import { AuthProvider } from "../hooks/useAuth";
-import { Filters, ToastProvider, RecordForm } from "../components/ui";
-import { AsyncSelect } from "../components/AsyncSelect";
-import { DateTimePicker } from "../components/DateTimePicker";
-import { App } from "../routes/App";
-import { money } from "../utils/format";
-import { visitFields, leadOptions, unitFields } from "../features/fields";
+import { queryClient } from "../src/services/query";
+import { AuthProvider } from "../src/hooks/useAuth";
+import { Filters, ToastProvider, RecordForm } from "../src/components/ui";
+import { AsyncSelect } from "../src/components/AsyncSelect";
+import { DateTimePicker } from "../src/components/DateTimePicker";
+import { App } from "../src/routes/App";
+import { money } from "../src/utils/format";
+import { visitFields, leadOptions, unitFields } from "../src/features/fields";
 const session = {
   token: "test-token",
   user: { id: "1", name: "Anaya Shah", email: "admin@estraos.demo" },

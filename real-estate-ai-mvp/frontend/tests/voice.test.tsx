@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { configureApi } from "../api/client";
-import { CallOutcome, DncBanner, MarkDnc, VisitBadges } from "./voice";
+import { configureApi } from "../src/api/client";
+import { CallOutcome, DncBanner, MarkDnc, VisitBadges } from "../src/features/voice";
 
 const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { "Content-Type": "application/json" } });
 let fetchMock: ReturnType<typeof vi.fn>;

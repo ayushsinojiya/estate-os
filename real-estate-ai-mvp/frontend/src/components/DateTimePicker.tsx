@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clock } from "./icons";
 
 type DateTimePickerProps = {
@@ -49,6 +49,7 @@ export function DateTimePicker({
   );
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const hour = parsed?.hour ?? "09";
   const minute = parsed?.minute ?? "00";
   const [hourDraft, setHourDraft] = useState(hour);
@@ -77,6 +78,55 @@ export function DateTimePicker({
     setHourDraft(hour);
     setMinuteDraft(minute);
   }, [hour, minute]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    function positionMenu() {
+      const button = trigger.current;
+      const popup = menu.current;
+      if (!button || !popup) return;
+
+      const viewport = window.visualViewport;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const margin = 16;
+      const gap = 6;
+      const dialog = root.current?.closest("dialog")?.getBoundingClientRect();
+      const leftLimit = Math.max(viewportLeft + margin, (dialog?.left ?? viewportLeft) + margin);
+      const rightLimit = Math.min(viewportLeft + viewportWidth - margin, (dialog?.right ?? viewportLeft + viewportWidth) - margin);
+      const width = Math.min(440, Math.max(1, rightLimit - leftLimit));
+      const buttonRect = button.getBoundingClientRect();
+
+      popup.style.position = "fixed";
+      popup.style.width = `${width}px`;
+      popup.style.maxHeight = `${Math.max(1, viewportHeight - margin * 2)}px`;
+      popup.style.left = `${Math.max(leftLimit, Math.min(buttonRect.left, rightLimit - width))}px`;
+
+      const popupHeight = Math.min(popup.getBoundingClientRect().height, viewportHeight - margin * 2);
+      const bottomLimit = viewportTop + viewportHeight - margin;
+      const below = bottomLimit - buttonRect.bottom - gap;
+      const above = buttonRect.top - viewportTop - margin - gap;
+      const preferredTop = below >= popupHeight || below >= above
+        ? buttonRect.bottom + gap
+        : buttonRect.top - popupHeight - gap;
+      popup.style.top = `${Math.max(viewportTop + margin, Math.min(preferredTop, bottomLimit - popupHeight))}px`;
+    }
+
+    positionMenu();
+    document.addEventListener("scroll", positionMenu, true);
+    window.addEventListener("resize", positionMenu);
+    window.visualViewport?.addEventListener("resize", positionMenu);
+    window.visualViewport?.addEventListener("scroll", positionMenu);
+    return () => {
+      document.removeEventListener("scroll", positionMenu, true);
+      window.removeEventListener("resize", positionMenu);
+      window.visualViewport?.removeEventListener("resize", positionMenu);
+      window.visualViewport?.removeEventListener("scroll", positionMenu);
+    };
+  }, [open, visibleMonth]);
 
   function setDate(date: Date) {
     onChange(localValue(date, hour, minute));
@@ -131,6 +181,7 @@ export function DateTimePicker({
       </button>
       {open && (
         <div
+          ref={menu}
           id={`${id}-calendar`}
           role="dialog"
           aria-label={`Choose ${label.toLowerCase()}`}
