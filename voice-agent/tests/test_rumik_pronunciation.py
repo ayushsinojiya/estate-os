@@ -6,7 +6,7 @@ from app.tts.rumik import rumik_pronunciation as p
 def test_measured_spellings():
     assert p("क्या आप इस weekend साइट विज़िट करना चाहेंगे?") == "क्या आप इस weekend site visit करना चाहेंगे?"
     assert p("तीन स्लॉट्स हैं: पहला स्लॉट सुबह") == "तीन slots हैं: पहला slot सुबह"
-    assert p("possession दिसंबर में, assistant और area") == "पज़ेशन दिसंबर में, असिस्टेंट और एरिया"
+    assert p("possession दिसंबर में, assistant और area") == "पज़ेशन दिसंबर में, assistent और एरिया"
     assert p("अमेनिटीज़ में gym है") == "amenities में gym है"
 
 
@@ -16,7 +16,7 @@ def test_other_words_are_untouched():
 
 
 def test_acronyms_and_brochure():
-    assert p("मैं एक एआई असिस्टेंट हूँ") == "मैं एक AI असिस्टेंट हूँ"
+    assert p("मैं एक एआई असिस्टेंट हूँ") == "मैं एक AI assistent हूँ"
     assert p("brochure WhatsApp पर भेज दूँ? RERA number") == "ब्रोशर WhatsApp पर भेज दूँ? रेरा number"
 
 

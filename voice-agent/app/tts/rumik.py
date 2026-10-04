@@ -41,7 +41,8 @@ _PRONUNCIATION: list[tuple[re.Pattern[str], str]] = [
         (r"(?<![\w\u0900-\u097f])(?:स्लॉट|स्लोट)(?![\u0900-\u097f])", "slot"),
         (r"(?<![\w\u0900-\u097f])(?:अमेनिटीज़|अमेनिटीज|एमेनिटीज़|एमेनिटीज)(?![\u0900-\u097f])", "amenities"),
         (r"\bpossession\b|(?<![\u0900-\u097f])(?:पोज़ेशन|पोजेशन|पजेशन|पोसेशन)(?![\u0900-\u097f])", "पज़ेशन"),
-        (r"\bassistant\b|(?<![\u0900-\u097f])(?:असिस्टैंट|असिस्टन्ट)(?![\u0900-\u097f])", "असिस्टेंट"),
+        # Chosen by ear (ira, mia, sophia): "assistent" in Latin; every Devanagari spelling sounded off.
+        (r"\bassistants?\b|(?<![\u0900-\u097f])(?:असिस्टेंट|असिस्टैंट|असिस्टन्ट|एसिस्टेंट)(?![\u0900-\u097f])", "assistent"),
         (r"\bareas?\b|(?<![\u0900-\u097f])एरीया(?![\u0900-\u097f])", "एरिया"),
         # "एआई" was recognised 1/3, "AI" / "A I" 3/3; "रेरा" 3/3 vs "RERA" 2/3.
         (r"(?<![\u0900-\u097f])एआई(?![\u0900-\u097f])", "AI"),
