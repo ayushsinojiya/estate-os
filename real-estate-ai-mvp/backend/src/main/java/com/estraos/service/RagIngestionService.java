@@ -68,14 +68,29 @@ public class RagIngestionService {
   }
 
   public JsonNode list(Long workspace, int page, int size, String search, String status) {
+    return list(workspace, page, size, search, status, "", "");
+  }
+
+  public JsonNode list(Long workspace, int page, int size, String search, String status, String dateFrom, String dateTo) {
     tenant.require(workspace);
     if (page < 0 || size < 1 || size > 100) throw ApiException.bad("Invalid pagination");
     if (search.length() > 200 || status.length() > 30)
       throw ApiException.bad("Search or status is too long");
-    var path = UriComponentsBuilder.fromPath(root(workspace) + "/sources")
+    try {
+      if (!dateFrom.isBlank()) java.time.Instant.parse(dateFrom);
+      if (!dateTo.isBlank()) java.time.Instant.parse(dateTo);
+    } catch (java.time.format.DateTimeParseException ex) {
+      throw ApiException.bad("Date filters must be UTC ISO timestamps");
+    }
+    if (!dateFrom.isBlank() && !dateTo.isBlank() &&
+        !java.time.Instant.parse(dateFrom).isBefore(java.time.Instant.parse(dateTo)))
+      throw ApiException.bad("Date from must be before date to");
+    var builder = UriComponentsBuilder.fromPath(root(workspace) + "/sources")
         .queryParam("page", page).queryParam("size", size)
-        .queryParam("search", search).queryParam("status", status)
-        .build().encode().toUriString();
+        .queryParam("search", search).queryParam("status", status);
+    if (!dateFrom.isBlank()) builder.queryParam("dateFrom", dateFrom);
+    if (!dateTo.isBlank()) builder.queryParam("dateTo", dateTo);
+    var path = builder.build().encode().toUriString();
     return request(HttpMethod.GET, path, null);
   }
 

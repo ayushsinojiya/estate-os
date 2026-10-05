@@ -325,11 +325,50 @@
   .date-time-picker-menu {
     @apply fixed z-30 grid w-[min(440px,calc(100vw-32px))] grid-cols-[minmax(0,1fr)_98px] gap-x-3 overflow-x-hidden overflow-y-auto rounded-lg border border-[#ccd9d2] bg-white p-3 shadow-xl;
   }
+  .date-time-picker-menu.date-only {
+    @apply grid-cols-1;
+  }
+  .date-range-filter {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .date-range-filter .date-time-picker {
+    @apply min-w-[145px] flex-1;
+  }
+  .date-range-filter .date-time-picker-trigger {
+    @apply h-full;
+  }
+  .date-range-separator {
+    @apply text-[#718178];
+  }
+  .date-range-clear {
+    @apply px-2 text-sm font-medium text-[#0f766e] hover:underline;
+  }
+  .table-date-filter {
+    @apply flex justify-end border-b border-[#e8eeeb] px-5 py-3;
+  }
   .date-time-picker-header {
     @apply col-start-1 mb-3 flex items-center justify-between;
   }
   .date-time-picker-header strong {
     @apply text-sm font-semibold text-[#31453a];
+  }
+  .date-time-picker-heading {
+    @apply flex min-w-0 items-center justify-center gap-2;
+  }
+  .date-time-picker-header .date-time-picker-heading button {
+    @apply h-auto w-auto min-w-0 px-1 py-1 text-sm font-semibold text-[#31453a] hover:bg-[#edf5f0];
+  }
+  .date-time-picker-heading button[aria-pressed="true"] {
+    @apply bg-[#edf5f0] text-[#0f766e];
+  }
+  .date-time-picker-choices {
+    @apply col-start-1 grid grid-cols-3 gap-1;
+  }
+  .date-time-picker-choices button {
+    @apply rounded-md px-2 py-2 text-sm text-[#40564a] hover:bg-[#edf5f0];
+  }
+  .date-time-picker-choices button[aria-pressed="true"] {
+    @apply bg-[#0f766e] font-semibold text-white hover:bg-[#0f766e];
   }
   .date-time-picker-header button {
     @apply grid h-7 w-7 place-items-center rounded-md text-[#466f5d] hover:bg-[#edf5f0];
@@ -353,6 +392,15 @@
   }
   .date-time-picker-days button.selected {
     @apply bg-[#0f766e] font-semibold text-white hover:bg-[#0f766e];
+  }
+  .date-time-picker-days button.today:not(.selected) {
+    @apply ring-1 ring-inset ring-[#0f766e] font-semibold text-[#0f766e];
+  }
+  .date-time-picker-footer {
+    @apply col-start-1 mt-3 flex justify-end border-t border-[#e8eeeb] pt-2;
+  }
+  .date-time-picker-footer button {
+    @apply rounded px-2 py-1 text-sm font-medium text-[#0f766e] hover:bg-[#edf5f0];
   }
   .date-time-picker-time {
     @apply col-start-2 row-span-3 row-start-1 flex flex-col items-center justify-start gap-3 border-l border-[#e8eeeb] pl-3 pt-1 text-[#557467];
@@ -1155,6 +1203,13 @@ footer {
 .visit-slot:hover {
   background: #fafcf8;
 }
+.visit-slot-main {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex: 1 1 400px;
+  min-width: 0;
+}
 .visit-date {
   width: 52px;
   flex-shrink: 0;
@@ -1499,8 +1554,12 @@ footer {
     padding: 18px 14px;
     flex-wrap: wrap;
   }
-  .visit-slot > :is(svg, .material-symbols-rounded) {
+  .visit-slot-main > :is(svg, .material-symbols-rounded) {
     display: none;
+  }
+  .visit-slot-main {
+    flex-wrap: wrap;
+    gap: 12px;
   }
   .visit-slot .badge {
     margin-left: 67px;

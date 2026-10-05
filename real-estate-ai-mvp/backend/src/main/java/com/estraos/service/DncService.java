@@ -77,7 +77,7 @@ public class DncService {
     // Every lead on this number is covered, not only the one named.
     var leads =
         db.queryForList(
-            "SELECT id, status FROM leads WHERE workspace_id=:ws AND"
+            "SELECT id, status FROM leads WHERE workspace_id=:ws AND deleted_at IS NULL AND"
                 + " right(regexp_replace(phone,'[^0-9]','','g'),10)=:tail",
             Map.of("ws", ws, "tail", tail));
     for (var lead : leads) {

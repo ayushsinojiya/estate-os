@@ -8,15 +8,16 @@ type DateTimePickerProps = {
   onChange: (value: string) => void;
   disabled?: boolean;
   required?: boolean;
+  dateOnly?: boolean;
 };
 
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function parts(value: string) {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
   if (!match) return null;
   const [, year, month, day, hour, minute] = match;
-  return { year: Number(year), month: Number(month) - 1, day: Number(day), hour, minute };
+  return { year: Number(year), month: Number(month) - 1, day: Number(day), hour: hour || "09", minute: minute || "00" };
 }
 
 function localValue(date: Date, hour: string, minute: string) {
@@ -38,12 +39,14 @@ export function DateTimePicker({
   onChange,
   disabled,
   required,
+  dateOnly = false,
 }: DateTimePickerProps) {
   const parsed = parts(value);
   const selectedDate = parsed
     ? new Date(parsed.year, parsed.month, parsed.day)
     : undefined;
   const [open, setOpen] = useState(false);
+  const [calendarView, setCalendarView] = useState<"days" | "months" | "years">("days");
   const [visibleMonth, setVisibleMonth] = useState(
     () => new Date(parsed?.year ?? new Date().getFullYear(), parsed?.month ?? new Date().getMonth(), 1),
   );
@@ -54,10 +57,8 @@ export function DateTimePicker({
   const minute = parsed?.minute ?? "00";
   const [hourDraft, setHourDraft] = useState(hour);
   const [minuteDraft, setMinuteDraft] = useState(minute);
-  const monthLabel = new Intl.DateTimeFormat("en-IN", {
-    month: "long",
-    year: "numeric",
-  }).format(visibleMonth);
+  const monthName = new Intl.DateTimeFormat("en-IN", { month: "long" }).format(visibleMonth);
+  const yearStart = visibleMonth.getFullYear() - 5;
   const days = useMemo(() => {
     const firstDay = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1).getDay();
     const count = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0).getDate();
@@ -65,6 +66,8 @@ export function DateTimePicker({
       index < firstDay ? undefined : new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), index - firstDay + 1),
     );
   }, [visibleMonth]);
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -129,7 +132,8 @@ export function DateTimePicker({
   }, [open, visibleMonth]);
 
   function setDate(date: Date) {
-    onChange(localValue(date, hour, minute));
+    onChange(dateOnly ? localValue(date, hour, minute).slice(0, 10) : localValue(date, hour, minute));
+    if (dateOnly) setOpen(false);
   }
 
   function setTime(nextHour: string, nextMinute: string) {
@@ -162,20 +166,20 @@ export function DateTimePicker({
         ref={trigger}
         type="button"
         className="date-time-picker-trigger"
-        aria-label="Select date and time"
+        aria-label={dateOnly ? `Select ${label.toLowerCase()}` : "Select date and time"}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={`${id}-calendar`}
         aria-required={required || undefined}
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => { setCalendarView("days"); setOpen((current) => !current); }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);
         }}
       >
         <span className="date-time-picker-value">
           <CalendarDays aria-hidden="true" size={17} />
-          {selectedDate ? `${dateLabel(selectedDate)} · ${hour}:${minute}` : `Select ${label.toLowerCase()}`}
+          {selectedDate ? `${dateLabel(selectedDate)}${dateOnly ? "" : ` · ${hour}:${minute}`}` : `Select ${label.toLowerCase()}`}
         </span>
         <ChevronDown aria-hidden="true" size={18} />
       </button>
@@ -185,7 +189,7 @@ export function DateTimePicker({
           id={`${id}-calendar`}
           role="dialog"
           aria-label={`Choose ${label.toLowerCase()}`}
-          className="date-time-picker-menu"
+          className={`date-time-picker-menu${dateOnly ? " date-only" : ""}`}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.preventDefault();
@@ -195,15 +199,18 @@ export function DateTimePicker({
           }}
         >
           <div className="date-time-picker-header">
-            <button type="button" aria-label="Previous month" onClick={() => setVisibleMonth((month) => new Date(month.getFullYear(), month.getMonth() - 1, 1))}>
+            <button type="button" aria-label={calendarView === "days" ? "Previous month" : calendarView === "months" ? "Previous year" : "Previous 12 years"} onClick={() => setVisibleMonth((month) => new Date(month.getFullYear() - (calendarView === "years" ? 12 : calendarView === "months" ? 1 : 0), month.getMonth() - (calendarView === "days" ? 1 : 0), 1))}>
               <ChevronLeft size={17} />
             </button>
-            <strong>{monthLabel}</strong>
-            <button type="button" aria-label="Next month" onClick={() => setVisibleMonth((month) => new Date(month.getFullYear(), month.getMonth() + 1, 1))}>
+            <div className="date-time-picker-heading">
+              <button type="button" aria-label="Choose month" aria-pressed={calendarView === "months"} onClick={() => setCalendarView(calendarView === "months" ? "days" : "months")}>{monthName}</button>
+              <button type="button" aria-label="Choose year" aria-pressed={calendarView === "years"} onClick={() => setCalendarView(calendarView === "years" ? "days" : "years")}>{visibleMonth.getFullYear()}</button>
+            </div>
+            <button type="button" aria-label={calendarView === "days" ? "Next month" : calendarView === "months" ? "Next year" : "Next 12 years"} onClick={() => setVisibleMonth((month) => new Date(month.getFullYear() + (calendarView === "years" ? 12 : calendarView === "months" ? 1 : 0), month.getMonth() + (calendarView === "days" ? 1 : 0), 1))}>
               <ChevronRight size={17} />
             </button>
           </div>
-          <div className="date-time-picker-weekdays">
+          {calendarView === "days" && <><div className="date-time-picker-weekdays">
             {weekdays.map((weekday) => <span key={weekday}>{weekday}</span>)}
           </div>
           <div className="date-time-picker-days">
@@ -214,15 +221,33 @@ export function DateTimePicker({
                   type="button"
                   aria-label={new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" }).format(date)}
                   aria-pressed={selectedDate?.getTime() === date.getTime()}
-                  className={selectedDate?.getTime() === date.getTime() ? "selected" : ""}
+                  aria-current={`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}` === todayKey ? "date" : undefined}
+                  className={`${selectedDate?.getTime() === date.getTime() ? "selected" : ""} ${`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}` === todayKey ? "today" : ""}`.trim()}
                   onClick={() => setDate(date)}
                 >
                   {date.getDate()}
                 </button>
               ) : <span key={`blank-${index}`} />,
             )}
+          </div></>}
+          {calendarView === "months" && <div className="date-time-picker-choices">
+            {Array.from({ length: 12 }, (_, month) => <button key={month} type="button"
+              aria-pressed={visibleMonth.getMonth() === month}
+              onClick={() => { setVisibleMonth(new Date(visibleMonth.getFullYear(), month, 1)); setCalendarView("days"); }}>
+              {new Intl.DateTimeFormat("en-IN", { month: "long" }).format(new Date(2026, month, 1))}
+            </button>)}
+          </div>}
+          {calendarView === "years" && <div className="date-time-picker-choices">
+            {Array.from({ length: 12 }, (_, offset) => yearStart + offset).map((year) => <button key={year} type="button"
+              aria-pressed={visibleMonth.getFullYear() === year}
+              onClick={() => { setVisibleMonth(new Date(year, visibleMonth.getMonth(), 1)); setCalendarView("days"); }}>
+              {year}
+            </button>)}
+          </div>}
+          <div className="date-time-picker-footer">
+            <button type="button" onClick={() => { setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setDate(today); }}>Today</button>
           </div>
-          <div className="date-time-picker-time">
+          {!dateOnly && <div className="date-time-picker-time">
             <Clock aria-hidden="true" size={16} />
             <div className="date-time-picker-time-fields" aria-label="Time">
               <input
@@ -255,7 +280,7 @@ export function DateTimePicker({
                 }}
               />
             </div>
-          </div>
+          </div>}
         </div>
       )}
     </div>

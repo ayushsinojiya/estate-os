@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -115,12 +117,26 @@ public class ManagedFileService {
     }
   }
 
-  public Map<String, Object> list(Long ws, int page, int size, String search, String status) {
+  public Map<String, Object> list(Long ws, int page, int size, String search, String status, String dateFrom, String dateTo) {
     tenant.require(ws);
     int safePage = Math.max(page, 0), safeSize = Math.min(Math.max(size, 1), 100);
+    Instant from;
+    Instant to;
+    try {
+      from = dateFrom == null || dateFrom.isBlank() ? null : Instant.parse(dateFrom);
+      to = dateTo == null || dateTo.isBlank() ? null : Instant.parse(dateTo);
+    } catch (DateTimeParseException ex) {
+      throw ApiException.bad("Date filters must be UTC ISO timestamps");
+    }
+    if (from != null && to != null && !from.isBefore(to))
+      throw ApiException.bad("Date from must be before date to");
     String where = "workspace_id=:ws" + (status == null || status.isBlank() ? "" : " AND status=:status")
-        + (search == null || search.isBlank() ? "" : " AND original_file_name ILIKE :search");
+        + (search == null || search.isBlank() ? "" : " AND original_file_name ILIKE :search")
+        + (from == null ? "" : " AND created_at >= :dateFrom")
+        + (to == null ? "" : " AND created_at < :dateTo");
     Map<String, Object> params = new HashMap<>(); params.put("ws", ws); params.put("limit", safeSize); params.put("offset", safePage * safeSize);
+    if (from != null) params.put("dateFrom", Timestamp.from(from));
+    if (to != null) params.put("dateTo", Timestamp.from(to));
     if (status != null && !status.isBlank()) params.put("status", status);
     if (search != null && !search.isBlank()) params.put("search", "%" + search.replace("%", "\\%").replace("_", "\\_") + "%" );
     long total = db.queryForObject("SELECT count(*) FROM managed_files WHERE " + where, params, Long.class);

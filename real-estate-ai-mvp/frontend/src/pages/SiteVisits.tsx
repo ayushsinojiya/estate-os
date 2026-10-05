@@ -51,6 +51,9 @@ function visitStatusPayload(visit: Record<string, any>, status: string) {
   };
 }
 
+const canCancelVisit = (status: unknown) =>
+  ["REQUESTED", "CONFIRMED", "RESCHEDULED"].includes(String(status));
+
 export function useVisitOptions() {
   const members = useApi("/members");
   return {
@@ -100,6 +103,7 @@ export function SiteVisits() {
   const l = useList("/site-visits", "scheduledAt,asc");
   const [params] = useSearchParams();
   const [create, setCreate] = useState(params.get("create") === "true");
+  const [cancelVisit, setCancelVisit] = useState<Entity | null>(null);
   const [view, setView] = useState("schedule");
   const o = useVisitOptions();
   const navigate = useNavigate();
@@ -150,47 +154,51 @@ export function SiteVisits() {
           {view === "schedule" && list(l.query.data).length ? (
             <div className="visit-schedule">
               {list(l.query.data).map((v: Entity) => (
-                <Link
-                  key={v.id}
-                  to={`/site-visits/${v.id}`}
-                  className="visit-slot"
-                >
-                  <div className="visit-date">
-                    <span>
-                      {new Date(v.scheduledAt).toLocaleDateString("en-IN", {
-                        month: "short",
-                      })}
-                    </span>
-                    <strong>{new Date(v.scheduledAt).getDate()}</strong>
-                  </div>
-                  <div className="flex-1">
-                    <h3>
-                      <EntityName
-                        path="/leads"
-                        id={v.leadId}
-                        fallback={v.leadName}
-                      />
-                    </h3>
-                    <p>
-                      <EntityName
-                        path="/projects"
-                        id={v.projectId}
-                        fallback={v.projectName}
-                      />
-                    </p>
-                    <small>
-                      {date(v.scheduledAt)} · {v.durationMinutes} minutes ·{" "}
-                      {v.agentName || name(o.members, v.agentId)}
-                    </small>
-                  </div>
-                  <VisitBadges visit={v} />
-                  <Badge value={v.status} />
-                  <CalendarDays size={19} className="text-muted" />
-                </Link>
+                <div key={v.id} className="visit-slot">
+                  <Link to={`/site-visits/${v.id}`} className="visit-slot-main">
+                    <div className="visit-date">
+                      <span>
+                        {new Date(v.scheduledAt).toLocaleDateString("en-IN", {
+                          month: "short",
+                        })}
+                      </span>
+                      <strong>{new Date(v.scheduledAt).getDate()}</strong>
+                    </div>
+                    <div className="flex-1">
+                      <h3>
+                        <EntityName
+                          path="/leads"
+                          id={v.leadId}
+                          fallback={v.leadName}
+                        />
+                      </h3>
+                      <p>
+                        <EntityName
+                          path="/projects"
+                          id={v.projectId}
+                          fallback={v.projectName}
+                        />
+                      </p>
+                      <small>
+                        {date(v.scheduledAt)} · {v.durationMinutes} minutes ·{" "}
+                        {v.agentName || name(o.members, v.agentId)}
+                      </small>
+                    </div>
+                    <VisitBadges visit={v} />
+                    <Badge value={v.status} />
+                    <CalendarDays size={19} className="text-muted" />
+                  </Link>
+                  {canCancelVisit(v.status) && (
+                    <button className="btn-danger" onClick={() => setCancelVisit(v)}>
+                      Cancel visit
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           ) : (
             <DataTable
+            dateFilter={false}
               data={list(l.query.data)}
               columns={[
                 {
@@ -240,6 +248,11 @@ export function SiteVisits() {
                   ),
                 },
               ]}
+              actions={(visit) => canCancelVisit(visit.status) ? (
+                <button className="text-link" onClick={() => setCancelVisit(visit)}>
+                  Cancel visit
+                </button>
+              ) : null}
             />
           )}
           <Pagination data={l.query.data} page={l.page} setPage={l.setPage} />
@@ -279,6 +292,26 @@ export function SiteVisits() {
           />
         </Modal>
       )}
+      {cancelVisit && (
+        <Modal title="Cancel site visit?" onClose={() => setCancelVisit(null)}>
+          <p className="text-muted mb-5">
+            The visit scheduled for {date(cancelVisit.scheduledAt)} will be cancelled.
+          </p>
+          <RecordForm
+            fields={[]}
+            submitLabel="Confirm cancellation"
+            danger
+            onCancel={() => setCancelVisit(null)}
+            onSubmit={async () => {
+              await write(`/site-visits/${cancelVisit.id}`,
+                visitStatusPayload(cancelVisit, "CANCELLED"), "PUT");
+              await queryClient.invalidateQueries();
+              setCancelVisit(null);
+              toast("Site visit cancelled");
+            }}
+          />
+        </Modal>
+      )}
     </>
   );
 }
@@ -300,11 +333,16 @@ export function SiteVisitDetail() {
         title="Site visit details"
         back="/site-visits"
         description={date(d.scheduledAt)}
-        action={
+        action={<>
           <button className="btn-primary" onClick={() => setEdit(true)}>
             Edit / reschedule
           </button>
-        }
+          {canCancelVisit(d.status) && (
+            <button className="btn-danger" onClick={() => setAction("CANCELLED")}>
+              Cancel visit
+            </button>
+          )}
+        </>}
       />
       <Async query={q}>
         <div className="summary-strip">
@@ -375,7 +413,7 @@ export function SiteVisitDetail() {
                     status === "CANCELLED" ? "btn-danger" : "btn-secondary"
                   }
                   onClick={() => setAction(status)}
-                  disabled={d.status === status}
+                  disabled={d.status === status || !canCancelVisit(d.status)}
                 >
                   {text}
                 </button>
@@ -423,6 +461,7 @@ export function SiteVisitDetail() {
           <RecordForm
             fields={[]}
             submitLabel="Confirm status change"
+            danger={action === "CANCELLED"}
             onCancel={() => setAction("")}
             onSubmit={async () => {
               await write(

@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { CalendarDays, Handshake, Phone, Plus, Sparkles } from "../components/icons";
 import { useApi } from "../hooks/useApi";
+import { useAuth } from "../hooks/useAuth";
 import { useList } from "../hooks/useList";
 import {
   Async,
@@ -52,6 +53,7 @@ export function Leads() {
         <Filters {...l} statuses={leadStatuses} />
         <Async query={l.query}>
           <DataTable
+            dateFilter={false}
             data={list(l.query.data)}
             columns={[
               {
@@ -293,6 +295,8 @@ export function LeadDetail() {
   const members = useApi("/members");
   const [edit, setEdit] = useState(false);
   const [call, setCall] = useState(false);
+  const [remove, setRemove] = useState(false);
+  const { canManage } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const d = q.data || {};
@@ -316,6 +320,9 @@ export function LeadDetail() {
               <Phone size={16} />
               Start call
             </button>
+            {canManage && q.data && (
+              <button className="btn-danger" onClick={() => setRemove(true)}>Remove lead</button>
+            )}
           </>
         }
       />
@@ -444,6 +451,27 @@ export function LeadDetail() {
               setCall(false);
               toast(result.mock ? "Simulated call created" : "Call requested");
               navigate(`/calls/${result.id}`);
+            }}
+          />
+        </Modal>
+      )}
+      {remove && (
+        <Modal title="Remove lead?" onClose={() => setRemove(false)}>
+          <p className="text-muted mb-5">
+            {d.name} will be hidden from leads and conversations. Past visits and audit history are kept.
+            Active visits, conversations, or handovers must be resolved first.
+          </p>
+          <RecordForm
+            fields={[]}
+            submitLabel="Confirm removal"
+            danger
+            onCancel={() => setRemove(false)}
+            onSubmit={async () => {
+              await write(`/leads/${id}`, null, "DELETE");
+              await queryClient.invalidateQueries();
+              setRemove(false);
+              toast("Lead removed");
+              navigate("/leads");
             }}
           />
         </Modal>

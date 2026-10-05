@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LeadDetail } from "../src/pages/Leads";
+import { write } from "../src/api/client";
 
 const lead = {
   id: "12",
@@ -16,17 +17,56 @@ const lead = {
   activities: [],
 };
 let activityFixtures: { id: string; description: string; createdAt: string }[] = [];
+let callbackFixtures: { id: string; status: string; dueAt: string }[] = [];
 
-beforeEach(() => { activityFixtures = []; });
+beforeEach(() => { activityFixtures = []; callbackFixtures = []; vi.clearAllMocks(); });
 
 vi.mock("../src/hooks/useApi", () => ({
   useApi: (path: string) => ({
     isPending: false,
     error: null,
     refetch: vi.fn(),
-    data: path === "/members" ? [] : { ...lead, activities: activityFixtures },
+    data: path === "/members" ? [] : { ...lead, activities: activityFixtures, callbacks: callbackFixtures },
   }),
 }));
+vi.mock("../src/hooks/useAuth", () => ({ useAuth: () => ({ canManage: true }) }));
+vi.mock("../src/api/client", () => ({ write: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../src/services/query", () => ({ queryClient: { invalidateQueries: vi.fn() } }));
+
+it("confirms lead removal and sends DELETE only after confirmation", async () => {
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={["/leads/12"]}>
+      <Routes>
+        <Route path="/leads/:id" element={<LeadDetail />} />
+        <Route path="/leads" element={<div>Leads list</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  await user.click(screen.getByRole("button", { name: "Remove lead" }));
+  expect(write).not.toHaveBeenCalledWith("/leads/12", expect.anything(), "DELETE");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Remove lead" }));
+  await user.click(screen.getByRole("button", { name: "Confirm removal" }));
+  expect(write).toHaveBeenCalledWith("/leads/12", null, "DELETE");
+  expect(await screen.findByText("Leads list")).toBeInTheDocument();
+});
+
+it("requires confirmation before cancelling a scheduled callback", async () => {
+  callbackFixtures = [{ id: "cb1", status: "SCHEDULED", dueAt: "2026-10-07T10:00:00Z" }];
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={["/leads/12"]}>
+      <Routes><Route path="/leads/:id" element={<LeadDetail />} /></Routes>
+    </MemoryRouter>,
+  );
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(write).not.toHaveBeenCalled();
+  expect(screen.getByRole("heading", { name: "Cancel callback?" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Confirm cancellation" }));
+  expect(write).toHaveBeenCalledWith("/callbacks/cb1/cancel", {});
+});
 
 describe("lead detail related records", () => {
   it("starts with the five latest activities and reveals older ones in batches", async () => {

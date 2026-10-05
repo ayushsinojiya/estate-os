@@ -161,6 +161,7 @@ export function AuditLogs() {
         <Filters {...l} statuses={[]} />
         <Async query={l.query}>
           <DataTable
+            dateFilter={false}
             data={list(l.query.data)}
             columns={[
               {

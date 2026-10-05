@@ -61,6 +61,21 @@ async def test_a_workspace_never_sees_another_workspaces_chunks(client, services
     assert (await client.get(f"/v1/workspaces/2/sources/{other_id}", headers=CRM)).status_code == 404
 
 
+async def test_source_list_date_range_filters_before_pagination(client, services):
+    first = await _publish(client, services, 1, "dated-a.md", BROCHURE_A)
+    second = await _publish(client, services, 1, "dated-b.md", BROCHURE_B)
+    async with services.db.conn() as conn:
+        await conn.execute("UPDATE kb_documents SET created_at='2020-01-05T12:00:00Z' WHERE source_id=%s", (uuid.UUID(first["id"]),))
+        await conn.execute("UPDATE kb_documents SET created_at='2020-01-06T12:00:00Z' WHERE source_id=%s", (uuid.UUID(second["id"]),))
+    result = await client.get("/v1/workspaces/1/sources", headers=CRM,
+                              params={"dateFrom": "2020-01-05T00:00:00Z", "dateTo": "2020-01-06T00:00:00Z", "size": 1})
+    assert result.status_code == 200
+    assert result.json()["total"] == 1
+    assert result.json()["items"][0]["id"] == first["id"]
+    invalid = await client.get("/v1/workspaces/1/sources", headers=CRM, params={"dateFrom": "yesterday"})
+    assert invalid.status_code == 422
+
+
 async def test_the_voice_token_is_bound_to_its_workspace(client, services):
     await _publish(client, services, 1, "a.md", BROCHURE_A)
     assert (await voice(client, 1, "clubhouse")).status_code == 200

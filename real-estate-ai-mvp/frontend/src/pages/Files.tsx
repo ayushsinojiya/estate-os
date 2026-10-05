@@ -113,7 +113,7 @@ function WorkspaceFiles() {
       </section>
       <section className="panel mt-6 min-w-0 max-w-full">
         <Filters search={search} onSearch={(value) => { setSearch(value); setPage(0); }} status={status} onStatus={(value) => { setStatus(value); setPage(0); }} statuses={["UPLOADED", "PARSING", "EMBEDDING", "PUBLISHED", "FAILED", "UNPUBLISHED"]}/>
-        <Async query={query}><DataTable data={query.data?.items || []} empty="No knowledge sources match the current filters." columns={[
+        <Async query={query}><DataTable dateFilter={false} data={query.data?.items || []} empty="No knowledge sources match the current filters." columns={[
           { key: "fileName", label: "Source", render: (source) => <button className="text-link text-left whitespace-normal break-all max-w-xs" onClick={() => setDetails(source.id)}>{source.fileName}</button> },
           { key: "sizeBytes", label: "Size", render: (source) => bytes(source.sizeBytes) },
           { key: "status", label: "Status", render: (source) => <><Badge value={source.status}/>{source.lowConfidencePageCount > 0 && <span className="ml-1"><Badge value="CHECK_PAGES"/></span>}{source.error && <p className="text-muted whitespace-normal break-words max-w-xs mt-1">{source.error}</p>}</> },
@@ -176,7 +176,7 @@ function LegacyFiles() {
     <p className="p-5 text-muted">Files stored before knowledge ingestion remain available in this history. They have not been automatically ingested. Upload the original files to add them as knowledge sources.</p>
     {error !== null && <ErrorState error={error}/>}
     <Filters {...list} statuses={["UPLOADING", "STORED", "FAILED", "DELETED"]}/>
-    <Async query={list.query}><DataTable data={list.query.data?.items || []} empty="No legacy files match the current filters." columns={[
+    <Async query={list.query}><DataTable dateFilter={false} data={list.query.data?.items || []} empty="No legacy files match the current filters." columns={[
       { key: "originalFileName", label: "File", render: (file) => <span className="whitespace-normal break-all">{file.originalFileName}</span> },
       { key: "fileExtension", label: "Type", render: (file) => String(file.fileExtension || "").toUpperCase() },
       { key: "fileSizeBytes", label: "Size", render: (file) => bytes(file.fileSizeBytes) },
