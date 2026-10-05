@@ -17,6 +17,7 @@ from app.llm.base import Message
 from . import flows
 from .extraction import Extraction, extract
 from .guardrails import asks_for_human, escalation_topic, wants_dnc, wrong_number
+from .money import caller_amounts
 from .prompt import PROMPT_VERSION, system_prompt
 from .scoring import ScoreInputs, lead_score, temperature
 from .sensitive import asks_for_promise, mentions_identity
@@ -53,6 +54,27 @@ _OPENINGS: dict[str, dict[str, str]] = {
 _TOPIC_FALLBACK = {"en": "a home with us", "hi": "घर", "mr": "घर"}
 _BOOKING = re.compile(r"(site\s*visit|visit\s+(?:karna|book|schedule)|dekhne\s+aana|dekhna\s+hai|"
                       r"विज़िट|विजिट|व्हिजिट|पाहायला\s+यायचं|જોવા\s+આવવું|વિઝિટ)", re.I)
+# Riya asked whether they would like to visit, and a short yes to that.
+_VISIT_QUESTION = re.compile(r"(visit|विज़िट|विजिट|व्हिजिट|देखने|पाहायला)[^?।]*(\?|चाहेंगे|चाहेंगी|करायची|करना है|करें(?=$|[\s,.!?।]))", re.I)
+_YES = re.compile(r"^\W*(?:हाँ|हां|हा|जी|ji|haan|han|yes|yeah|ok|okay|ओके|ठीक|theek|sure|ज़रूर|जरूर|बिल्कुल|चलेगा|"
+                  r"chalega|कर\s+(?:दीजिए|दो|दीजिये)|हो|hoy)(?=$|[\s,.!?।])", re.I)
+# The caller asks to hear something again: then a repeat is wanted.
+_REPEAT = re.compile(r"(दोबारा|फिर\s*से|फिरसे|repeat|again|पुन्हा|परत\s+सांगा|एक\s*बार\s*और|समझ\s+नहीं\s+आया)", re.I)
+# Common Devanagari spellings of the localities, so a caller saying "हिंजवड़ी" is understood.
+_LOCALITY_SPELLINGS = {
+    "hinjewadi": ("हिंजवडी", "हिंजेवाड़ी", "हिंजवाड़ी", "हिंजेवाडी", "हिंजवड़ी"), "wakad": ("वाकड", "वाकड़"),
+    "baner": ("बाणेर", "बानेर"), "kharadi": ("खराडी", "खराड़ी"), "wagholi": ("वाघोली",),
+    "kothrud": ("कोथरूड", "कोथरुड"), "undri": ("उंड्री", "उंद्री"), "ravet": ("रावेत", "रावेट"),
+    "viman nagar": ("विमान नगर", "विमाननगर"), "hadapsar": ("हडपसर", "हड़पसर"),
+}
+# Project aliases too common to mean the project ("metro station").
+_WEAK_ALIASES = {"metro", "one", "park", "towers", "heights", "valley", "grove", "residency", "residences"}
+
+
+def _norm(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", (text or "").lower()).split())
+
+
 # "Tell me the details first", "later", "not now": the caller is not ready to book.
 _DEFER = re.compile(r"(पहले\s+(?:आप\s+)?(?:मुझे\s+)?(?:detail|डिटेल)|(?:details?|डिटेल्स?|जानकारी)\s+(?:बताइए|बताओ|बता\s+दो|"
                     r"दीजिए|दो|चाहिए)|pehle\s+details?|details?\s+(?:batao|bataiye|chahiye)|बाद\s+में|baad\s+mein|"
@@ -161,7 +183,13 @@ class RealEstateConversation:
         s = self.state
         s.language = lang
         s.caller_turns += 1
-        s.guard.add_text(text)  # the caller's own figures (their budget) may be read back
+        s.guard.add_caller_text(text)  # the caller's own figures (their budget) may be read back
+        s.last_caller_text = text
+        s.caller_asked_repeat = bool(_REPEAT.search(text))
+        mentioned = self.mentioned_project(text)
+        if mentioned is not None:
+            s.focus_project_id = str(mentioned["id"])
+        self._check_budget(text)
         if wants_dnc(text):
             self.background(self.mark_dnc("explicit request on the call"))
             self.advance()
@@ -188,7 +216,10 @@ class RealEstateConversation:
             s.handover_reason = s.handover_reason or topic
             if topic not in s.escalations:
                 s.escalations.append(topic)
-        s.wants_visit_now = bool(_BOOKING.search(text))
+        # A visit is wanted when the caller asks for one, or says yes to Riya's question about it.
+        s.wants_visit_now = bool(_BOOKING.search(text)) or (s.visit_question_asked and bool(_YES.search(text))
+                                                            and not _DEFER.search(text))
+        s.visit_question_asked = False
         if s.wants_visit_now:
             s.asked_to_book = True
             s.visit_deferred = False
@@ -201,16 +232,71 @@ class RealEstateConversation:
         self.advance()
         return None
 
+    def mentioned_project(self, text: str) -> dict[str, Any] | None:
+        """The one project the caller's words name, by project name or by a locality with one project."""
+        catalog = self.plugin.catalog or {}
+        projects = catalog.get("projects", [])
+        lowered = (text or "").lower()
+        hits = []
+        for p in projects:
+            names = [p["name"].lower()] + [a for a in p.get("aliases", []) if a not in _WEAK_ALIASES and len(a) >= 5]
+            if any(n and n in lowered for n in names):
+                hits.append(p)
+        if not hits:
+            localities = {loc["id"]: loc["name"].lower() for loc in catalog.get("localities", [])}
+            for p in projects:
+                name = localities.get(p.get("localityId"), "")
+                spellings = (name,) + _LOCALITY_SPELLINGS.get(name.split(" phase")[0], ())
+                if name and any(sp and sp in lowered for sp in spellings):
+                    hits.append(p)
+        return hits[0] if len(hits) == 1 else None
+
+    def _check_budget(self, text: str) -> None:
+        """A budget far outside our price range is most likely misheard ("सत्तर से अस्सी" -> "780 लाख"):
+        Riya confirms it once before searching. A figure the caller confirms is accepted."""
+        s = self.state
+        if s.budget_to_confirm is not None:
+            s.budgets_confirmed.append(s.budget_to_confirm)  # they have answered the confirmation
+            s.budget_to_confirm = None
+        prices = [t for p in (self.plugin.catalog or {}).get("projects", []) for t in p.get("unitTypes", [])]
+        if not prices:
+            return
+        low = min(float(t["priceMinInr"]) for t in prices)
+        high = max(float(t["priceMaxInr"]) for t in prices)
+        for amount in caller_amounts(text):
+            if amount in s.budgets_confirmed:
+                continue
+            if amount > high * 2 or amount < low * 0.5:
+                s.budget_to_confirm = amount
+                return
+
     def screen_reply(self, sentence: str, lang: Lang) -> str:
+        s = self.state
+        norm = _norm(sentence)
+        visit_question = bool(_VISIT_QUESTION.search(sentence))
+        visit_in_progress = s.wants_visit_now or s.asked_to_book or bool(s.slots_offered_for) or bool(s.booked_visit)
+        if visit_question and s.visit_offers >= 1 and not visit_in_progress:
+            # A site visit is optional: asked about once; never pressed again unless the caller raises it.
+            log.info("call %s: dropped a repeated visit question", self.info.call_id)
+            return ""
+        if norm and norm in s.spoken and not s.caller_asked_repeat:
+            log.info("call %s: dropped a sentence already said", self.info.call_id)
+            return ""
         unsupported = self.state.guard.unsupported(sentence)
         if unsupported:
-            log.warning("call %s: fact guard replaced a sentence quoting unsupported figures %s",
-                        self.info.call_id, unsupported)
+            log.warning("call %s: fact guard replaced a sentence quoting unsupported figures %s "
+                        "(sentence %r; amounts in evidence %s)", self.info.call_id, unsupported,
+                        sentence[:160], sorted(self.state.guard.evidence)[:20])
             self.state.action("price_guard")
             return self.plugin.phrases.render("expert_confirm", lang)
+        if norm:
+            s.spoken.append(norm)
         return sentence
 
     def on_agent_reply(self, text: str) -> None:
+        if _VISIT_QUESTION.search(text or ""):
+            self.state.visit_question_asked = True
+            self.state.visit_offers += 1
         self.advance()
 
     # ---------------------------------------------------------------- do-not-call

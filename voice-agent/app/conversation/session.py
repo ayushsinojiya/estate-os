@@ -19,13 +19,13 @@ from typing import Callable
 
 from app.conversation.events import (FinalTranscript, PartialTranscript, SpeechEnded, SpeechStarted,
                                      STTFailure)
-from app.conversation.interruption import BargeIn, BargeInDetector
+from app.conversation.interruption import BargeIn, BargeInDetector, is_backchannel
 from app.conversation.silence import SilenceWatchdog
 from app.conversation.turn_detection import TurnConfig, TurnDetector
 from app.domain.base import (CallerTurnAction, CallInfo, CallRecord, Conversation, PhraseBook, Tool,
                              ToolOutcome)
 from app.lang.devanagari import to_devanagari_speech
-from app.lang.languages import Lang, LanguageTracker, is_noise
+from app.lang.languages import Lang, LanguageTracker, is_noise, to_devanagari_script
 from app.lang.redaction import redact
 from app.llm.base import Message, TextDelta, ToolCall, ToolCallReady, Usage
 from app.observability.cost import CostMeter
@@ -120,6 +120,7 @@ class CallSession:
         self._ending = False
         self._pending_end: ToolOutcome | None = None
         self._goodbye_said = False
+        self._variant_turns: dict[str, int] = {}
         self.cost = CostMeter()
         self._tasks: list[asyncio.Task] = []
         self._reply: asyncio.Task | None = None
@@ -136,7 +137,16 @@ class CallSession:
         await self.speech.speak_text(self._spoken(text, lang), lang, phrase_key=phrase_key)
 
     async def _say_phrase(self, key: str, lang: Lang) -> None:
+        key = self._next_variant(key)
         await self._say(self.deps.phrases.render(key, lang), lang, phrase_key=key)
+
+    def _next_variant(self, key: str) -> str:
+        """Rotate through a phrase's versions within the call: "let me check" in a different wording each time."""
+        variants = getattr(self.deps.phrases, "variants", None)
+        options = variants(key) if variants else (key,)
+        n = self._variant_turns.get(key, 0)
+        self._variant_turns[key] = n + 1
+        return options[n % len(options)]
 
     async def _on_silence(self, count: int) -> None:
         """Nudge a quiet caller; the watchdog gives up after its configured number of prompts.
@@ -145,6 +155,9 @@ class CallSession:
         survive the caller speaking and keep prompting over the conversation.
         """
         if self._ending or self.speech.speaking or (self._reply and not self._reply.done()):
+            return
+        # The caller is mid-sentence (voice detected, or words still arriving): not silence.
+        if self.turns.speaking or self.turns.current_text():
             return
         log.info("call %s: silence prompt %d", self.info.call_id, count)
         await self._say_phrase("still_there" if count > 1 else "silence_prompt", self.lang.current)
@@ -212,6 +225,7 @@ class CallSession:
         working: list[Message] = [Message("user", question)]
         reply = ""
         ending = False
+        filler_said = False  # one "let me check" per turn, however many lookups it takes
         try:
             for hop in range(self.deps.max_tool_hops + 1):
                 last_hop = hop == self.deps.max_tool_hops
@@ -252,14 +266,17 @@ class CallSession:
                         pending = f"{pending} {part}".strip()
                         if len(pending) >= MIN_SENTENCE_CHARS:
                             sentence = self.conversation.screen_reply(pending, lang)
+                            pending = ""
+                            if not sentence:  # dropped: a repeat, or a visit question already asked
+                                continue
                             reply = f"{reply} {sentence}".strip()
                             yield sentence
-                            pending = ""
                     buffer = f"{pending} {buffer}".strip() if pending else buffer
                 if buffer.strip():
                     sentence = self.conversation.screen_reply(buffer.strip(), lang)
-                    reply = f"{reply} {sentence}".strip()
-                    yield sentence
+                    if sentence:
+                        reply = f"{reply} {sentence}".strip()
+                        yield sentence
                 log.info("call %s: model hop %d first output %.0fms, done %.0fms, %d tool call(s)",
                          self.info.call_id, hop, first_event_ms or 0, (time.monotonic() - hop_started) * 1000,
                          len(calls))
@@ -271,7 +288,8 @@ class CallSession:
                 working.append(Message("assistant", hop_text, tool_calls=calls))
                 filler = next((tools[c.name].filler for c in calls
                                if c.name in tools and tools[c.name].filler), None)
-                if filler and not hop_text.strip():
+                if filler and not hop_text.strip() and not filler_said and not reply:
+                    filler_said = True
                     yield (_PHRASE, filler)
                 outcomes = await asyncio.gather(*(self._run_tool(tools, c) for c in calls))
                 for call, outcome in zip(calls, outcomes):
@@ -315,17 +333,34 @@ class CallSession:
                     if self._barge_task is None or self._barge_task.done():
                         self._barge_task = asyncio.create_task(self._watch_barge_in())
             elif isinstance(event, PartialTranscript):
-                self.turns.on_partial(event.text)
-                self.barge.on_text(event.text)
+                text = "" if is_noise(event.text) else to_devanagari_script(event.text)
+                self.turns.on_partial(text)
+                self.barge.on_text(text)
+                self._words_while_speaking(text)
             elif isinstance(event, FinalTranscript):
-                self.turns.on_final(event.text, event.language)
-                self.barge.on_text(event.text)
+                # Hindi spelt in another Indic script is converted, not lost; a jumble of scripts is noise.
+                text = "" if is_noise(event.text) else to_devanagari_script(event.text)
+                self.turns.on_final(text, event.language)
+                self.barge.on_text(text)
+                self._words_while_speaking(text)
             elif isinstance(event, SpeechEnded):
                 self.turns.on_speech_end(event.t)
                 self.barge.on_speech_end(event.t)
             elif isinstance(event, STTFailure):
                 log.warning("call %s: speech recognition failed: %s", self.info.call_id, event.reason)
                 await self.caller.switch_to_fallback()
+
+    def _words_while_speaking(self, text: str) -> None:
+        """Never talk over the caller. The recogniser hears every frame, also while Riya speaks; real words
+        from the caller stop her at once, even when the voice detector (its threshold raised against her
+        own echo) missed the onset. Backchannels ("हाँ", "ok") do not."""
+        if not text or not self.speech.speaking or is_backchannel(text):
+            return
+        if self._barge_task is not None and not self._barge_task.done():
+            return  # already deciding on this interruption; it has the text
+        self.barge.on_onset(asyncio.get_running_loop().time())
+        self.barge.on_text(text)
+        self._barge_task = asyncio.create_task(self._watch_barge_in())
 
     async def _watch_barge_in(self) -> None:
         while True:

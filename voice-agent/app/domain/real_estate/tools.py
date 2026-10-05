@@ -157,7 +157,9 @@ class ToolBox:
                                        "instruction": "Apologise briefly and say our team will confirm."})
             self.s.tool_log.append({"tool": name, "args": arguments,
                                     "result": {k: v for k, v in outcome.content.items() if k != "chunks"}})
-            self.s.guard.add_result(outcome.content)
+            # Prices come from the CRM only: a brochure's figures may support an area or a count,
+            # never a rupee amount (a document's "Type A ₹92 lakh" was once quoted for the wrong project).
+            self.s.guard.add_result(outcome.content, prices=name != "ask_knowledge")
             self.c.advance()
             return outcome
 
@@ -184,6 +186,9 @@ class ToolBox:
     # ---------------------------------------------------------------- inventory
 
     async def search_properties(self, a: SearchArgs) -> ToolOutcome:
+        if self.s.budget_to_confirm:
+            return ToolOutcome({"options": [], "instruction": "First confirm the budget you heard; it is far outside "
+                                                              "our prices and may be misheard. Ask once, briefly."})
         r = self.s.requirements
         r.budget_max = a.budget_max_inr or r.budget_max
         r.budget_min = a.budget_min_inr or r.budget_min
@@ -195,14 +200,19 @@ class ToolBox:
         options = [{"project": m["projectName"], "projectId": m["projectId"], "locality": m.get("localityName"),
                     "bhk": m["bhk"], "price": spoken_range(m["priceMinInr"], m["priceMaxInr"]),
                     "priceMinInr": m["priceMinInr"], "priceMaxInr": m["priceMaxInr"],
-                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate")} for m in matches]
+                    "availableUnits": m["availableUnits"], "possession": m.get("possessionDate"),
+                    # The CRM ranks options within budget first; near misses (up to 10% over) follow.
+                    "withinBudget": bool(m.get("withinBudget", not budget or m["priceMinInr"] <= budget))}
+                   for m in matches]
         self.s.recommended = options
         self.s.budget_fits = bool(budget) and any(o["priceMinInr"] <= budget * 1.1 for o in options)
         self.s.action("search_properties")
         if not options:
             return ToolOutcome({"options": [], "instruction": "Nothing available matches; ask which requirement "
                                                               "they could relax, or offer a callback."})
-        return ToolOutcome({"options": options, "note": "Recommend at most two."})
+        return ToolOutcome({"options": options, "note": "Recommend at most two, preferring withinBudget ones. "
+                            "Only say an option is in their budget when withinBudget is true; otherwise say it is "
+                            "slightly above their budget."})
 
     async def get_project_info(self, a: ProjectArgs) -> ToolOutcome:
         project = self._project(a.project)
@@ -264,11 +274,36 @@ class ToolBox:
 
     # ---------------------------------------------------------------- visits
 
+    def _off_focus(self, project: dict[str, Any]) -> ToolOutcome | None:
+        """Visits are only for the project the caller is talking about, unless they just named another."""
+        focus = self.s.focus_project_id
+        if not focus or str(project["id"]) == focus:
+            return None
+        named = self.c.mentioned_project(self.s.last_caller_text)
+        if named is not None and str(named["id"]) == str(project["id"]):
+            return None
+        current = next((p["name"] for p in (self.c.plugin.catalog or {}).get("projects", []) if str(p["id"]) == focus),
+                       "the project they asked about")
+        return ToolOutcome({"error": "not_the_callers_project", "callerIsAskingAbout": current,
+                            "instruction": f"The caller is talking about {current}. Offer or book a visit only for "
+                                           f"{current}, unless they ask about another project."})
+
     async def get_visit_slots(self, a: SlotArgs) -> ToolOutcome:
         project = self._project(a.project)
         if project is None:
             return self._unknown_project(a.project)
-        if not a.preferred_day and not self.s.wants_visit_now:
+        if (off := self._off_focus(project)) is not None:
+            return off
+        about_existing_visit = self.s.call_type == "VISIT_REMINDER" or bool(self.s.context.get("visit"))
+        if not a.preferred_day and not self.s.wants_visit_now and not about_existing_visit:
+            if not self.s.slots_offered_for:
+                # "Show me the Baner one" asks about the project, not for a visit. No "slots" key: an empty
+                # list was once read out as "no slots are available".
+                return ToolOutcome({"project": project["name"], "visitTimesLookedUp": False,
+                                    "instruction": "Visit times exist but were not looked up, because the caller has "
+                                                   "not asked for a visit. Never say no slots are available. Answer "
+                                                   "what they asked, then ask once whether they would like to visit; "
+                                                   "call get_visit_slots after they say yes."})
             if self.s.visit_deferred:
                 return ToolOutcome({"project": project["name"], "slots": [],
                                     "instruction": "The caller wants details first. Do not offer visit times now; "
@@ -323,6 +358,8 @@ class ToolBox:
         project = self._project(a.project)
         if project is None:
             return self._unknown_project(a.project)
+        if (off := self._off_focus(project)) is not None:
+            return off
         offered = self._offered(a.slot_start)
         if offered is None:
             if self.s.offered_slots:
