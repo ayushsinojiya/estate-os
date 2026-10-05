@@ -284,6 +284,11 @@ class CallSession:
                     self._goodbye_said = bool(hop_text.strip())
                     break
                 if not calls or last_hop:
+                    if not reply:
+                        fallback = getattr(self.conversation, "take_dropped", lambda: "")()
+                        if fallback:
+                            reply = fallback
+                            yield fallback
                     break
                 working.append(Message("assistant", hop_text, tool_calls=calls))
                 filler = next((tools[c.name].filler for c in calls

@@ -67,3 +67,13 @@ def test_a_confirmed_unusual_budget_is_accepted():
     c.screen_caller("budget 780 लाख", "hi")
     c.screen_caller("हाँ, 780 लाख ही है", "hi")
     assert c.state.budget_to_confirm is None
+
+
+def test_a_reply_that_is_only_a_repeat_is_said_rather_than_silence():
+    c = _conversation()
+    c.screen_caller("Baner में क्या है?", "hi")
+    assert c.screen_reply("Sahyadri Grove में 2 BHK available है।", "hi")
+    c.screen_caller("हम्म", "hi")
+    assert c.screen_reply("Sahyadri Grove में 2 BHK available है।", "hi") == ""
+    assert c.take_dropped() == "Sahyadri Grove में 2 BHK available है।"
+    assert c.take_dropped() == ""

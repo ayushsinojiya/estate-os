@@ -39,3 +39,21 @@ def test_two_english_words_do_not_switch_a_hindi_call():
     t = LanguageTracker("hi")
     assert t.observe("Near by", "en-IN") == "hi"
     assert t.observe("near by area में बताओ", "en-IN") == "hi"
+
+
+def test_a_marathi_letter_in_a_place_name_does_not_switch_a_hindi_call():
+    t = LanguageTracker("hi")
+    assert t.observe("वाकळ में दिखा दो", "mr-IN") == "hi"
+    assert t.observe("बजट नक्की नहीं है मेरा", "mr-IN") == "hi"
+
+
+def test_real_marathi_still_switches():
+    t = LanguageTracker("hi")
+    assert t.observe("मला दोन बीएचके पाहिजे आहे", "mr-IN") == "mr"
+
+
+def test_asking_for_hindi_locks_it():
+    t = LanguageTracker("mr")
+    assert t.observe("हिंदी में बात करिए पहले") == "hi"
+    assert t.observe("मला दोन बीएचके पाहिजे आहे", "mr-IN") == "hi"  # locked
+    assert t.observe("please speak English with me") == "en"   # another explicit request

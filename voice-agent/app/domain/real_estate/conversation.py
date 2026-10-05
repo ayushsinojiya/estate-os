@@ -185,6 +185,7 @@ class RealEstateConversation:
         s.caller_turns += 1
         s.guard.add_caller_text(text)  # the caller's own figures (their budget) may be read back
         s.last_caller_text = text
+        self._dropped = ""
         s.caller_asked_repeat = bool(_REPEAT.search(text))
         mentioned = self.mentioned_project(text)
         if mentioned is not None:
@@ -231,6 +232,12 @@ class RealEstateConversation:
             s.identity_confirmed = True
         self.advance()
         return None
+
+    def take_dropped(self) -> str:
+        """A repeat dropped from this answer. Spoken anyway when nothing else was said: a repeat is
+        better than silence (which only triggers "I couldn't hear you")."""
+        dropped, self._dropped = getattr(self, "_dropped", ""), ""
+        return dropped
 
     def mentioned_project(self, text: str) -> dict[str, Any] | None:
         """The one project the caller's words name, by project name or by a locality with one project."""
@@ -281,6 +288,7 @@ class RealEstateConversation:
             return ""
         if norm and norm in s.spoken and not s.caller_asked_repeat:
             log.info("call %s: dropped a sentence already said", self.info.call_id)
+            self._dropped = self._dropped or sentence
             return ""
         unsupported = self.state.guard.unsupported(sentence)
         if unsupported:
