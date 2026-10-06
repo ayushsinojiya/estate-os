@@ -340,6 +340,10 @@ case "${1:-all}" in
     # Voice agent only: rebuild its image and roll it out.
     acr_creds; build_agent_image; deploy_agent; wire_together; urls
     ;;
+  web)
+    # CRM web only: rebuild the bundle against the deployed API and roll it out.
+    acr_creds; build_web_image "https://$(fqdn "$CRM_APP")"; deploy_web; urls
+    ;;
   images)
     acr_creds
     build_crm_image; build_agent_image; build_rag_image
