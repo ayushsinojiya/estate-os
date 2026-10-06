@@ -2,7 +2,10 @@
 
 wss://api.vachana.ai/api/v1/tts with header X-API-Key-ID. One connection serves requests one after
 another: send {"text", "voice", "model", "language", "speed", "audio_config"}, receive
-{"type": "start"}, {"type": "audio", "data": {"audio": <base64>}} chunks and {"type": "complete"}.
+{"type": "start"}, {"type": "audio", "data": {"audio": <base64>}} chunks, then TWO "complete" messages:
+one with the last chunk ({"data": {..., "is_final": true}}) and one closing the request
+({"message": "Streaming completed"}). Only the second ends a request: stopping at the first left the
+second to end the next sentence at once, so every other sentence came out silent.
 Audio is requested as raw 8 kHz μ-law, the phone's own format. There is no cancel message, so a
 barge-in closes the connection and the next sentence opens a new one.
 """
@@ -28,6 +31,7 @@ LANGUAGE_CODES = {"hi": "hi-IN", "mr": "mr-IN", "en": "en-IN"}
 
 class GnaniTTS:
     URL = "wss://api.vachana.ai/api/v1/tts"
+    REPLY_TIMEOUT_S = 8.0
 
     def __init__(self, api_key: str, voices: dict[str, str], model: str = "timbre-v2.5", speed: float = 1.0,
                  url: str = URL, languages: dict[str, str] | None = None):
@@ -59,23 +63,36 @@ class GnaniTTS:
             await self._open()
             try:
                 await self._ws.send(json.dumps(self.request(text, language), ensure_ascii=False))
-                async for msg in self._ws:
+                started = final_chunk = False
+                while True:
+                    # After the last chunk the closing message follows at once; never wait long for it.
+                    timeout = 1.0 if final_chunk else self.REPLY_TIMEOUT_S
+                    try:
+                        msg = await asyncio.wait_for(self._ws.recv(), timeout)
+                    except asyncio.TimeoutError:
+                        if final_chunk:
+                            return
+                        raise TTSError("gnani tts: no reply") from None
                     if isinstance(msg, bytes):
-                        yield msg
+                        if started:
+                            yield msg
                         continue
                     data = json.loads(msg)
                     kind = data.get("type")
-                    if kind == "audio":
-                        audio = (data.get("data") or {}).get("audio")
-                        if audio:
-                            yield base64.b64decode(audio)
-                    elif kind == "complete":
-                        audio = (data.get("data") or {}).get("audio")
-                        if audio:
-                            yield base64.b64decode(audio)
-                        return
-                    elif kind == "error":
+                    if kind == "error":
                         raise TTSError(f"gnani tts: {data.get('message')}")
+                    if kind == "start":
+                        started = True
+                        continue
+                    if not started:
+                        continue  # left over from an earlier request
+                    payload = data.get("data") if isinstance(data.get("data"), dict) else None
+                    if payload and payload.get("audio"):
+                        yield base64.b64decode(payload["audio"])
+                    if kind == "complete":
+                        if payload is None:
+                            return  # "Streaming completed": this request is done
+                        final_chunk = True
             except ConnectionClosed as exc:
                 self._ws = None
                 raise TTSError(f"gnani socket closed: {exc}") from exc

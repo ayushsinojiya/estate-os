@@ -54,7 +54,8 @@ async def test_tts_asks_for_phone_audio_and_reuses_one_connection():
             requests.append(json.loads(msg))
             await ws.send(json.dumps({"type": "start"}))
             await ws.send(json.dumps({"type": "audio", "data": {"audio": base64.b64encode(b"\x7f" * 160).decode()}}))
-            await ws.send(json.dumps({"type": "complete", "data": {"audio": ""}}))
+            await ws.send(json.dumps({"type": "complete", "data": {"audio": "", "is_final": True}}))
+            await ws.send(json.dumps({"type": "complete", "message": "Streaming completed"}))
 
     async with serve(server, "127.0.0.1", 0) as srv:
         port = srv.sockets[0].getsockname()[1]
@@ -75,3 +76,24 @@ def test_openai_compatible_llm_drops_sarvam_only_fields():
     assert "reasoning_effort" not in body and body["model"] == "evon"
     assert llm._url == "https://llm.example/v1/chat/completions"
     assert llm._headers["X-API-Key-ID"] == "secret"
+
+
+async def test_a_sentence_after_the_first_is_not_silent():
+    """Gnani closes each request with two "complete" messages; the second must not end the next one."""
+
+    async def server(ws):
+        async for msg in ws:
+            n = len(json.loads(msg)["text"])
+            await ws.send(json.dumps({"type": "start"}))
+            await ws.send(json.dumps({"type": "audio", "data": {"audio": base64.b64encode(b"\x01" * n).decode()}}))
+            await ws.send(json.dumps({"type": "complete", "data": {"audio": "", "is_final": True}}))
+            await ws.send(json.dumps({"type": "complete", "message": "Streaming completed"}))
+
+    async with serve(server, "127.0.0.1", 0) as srv:
+        port = srv.sockets[0].getsockname()[1]
+        tts = GnaniTTS("k", {"hi": "Urmila"}, url=f"ws://127.0.0.1:{port}")
+        sizes = []
+        for text in ("एक", "दो दो", "तीन तीन तीन"):
+            sizes.append(len(b"".join([c async for c in tts.synthesize(text, "hi")])))
+        await tts.close()
+    assert sizes == [len("एक"), len("दो दो"), len("तीन तीन तीन")]
