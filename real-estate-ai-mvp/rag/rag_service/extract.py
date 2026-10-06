@@ -39,7 +39,8 @@ Return exactly:
                "price": str|null, "locality": str|null, "furnishing": str|null, "facing": str|null,
                "parking": str|null, "availability": str|null, "amenities": [str], "notes": str|null}]}
 
-A project is a named development, building or society; a locality on its own is not a project.
+A project is a named development, building or society; a locality on its own is not a project,
+and neither is a listing's id or code (such as "PUN-0004"), which goes in "ref".
 Each row of a configuration or price table is one listing, with the project it belongs to.
 "description" is one short sentence taken from the page."""
 
@@ -314,7 +315,7 @@ async def extract(pages: list[tuple[int, str]], file_name: str, model: Extractio
                              f"Page {page_no}:\n\n{part}")
             for p in reply.get("projects") or []:
                 name = _clean(p.get("name"))
-                if not name or len(name) > 200:
+                if not name or len(name) > 200 or _looks_like_ref(name):
                     continue
                 entry = projects.setdefault(name, {"name": name})
                 if name not in named_here:
@@ -329,6 +330,9 @@ async def extract(pages: list[tuple[int, str]], file_name: str, model: Extractio
                 if not isinstance(raw, dict):
                     continue
                 item = _listing(raw, page_no, page_text=part, warnings=warnings, default_city=city, from_model=True)
+                if item and item["projectName"] and (_looks_like_ref(item["projectName"])
+                                                     or item["projectName"] == item["ref"]):
+                    item["projectName"] = None  # a listing code is not a project
                 if item:
                     listings.append(item)
         _assign_project(page_rows, named_here, projects)
@@ -338,6 +342,14 @@ async def extract(pages: list[tuple[int, str]], file_name: str, model: Extractio
     return {"schema": SCHEMA_VERSION, "city": city, "projects": list(projects.values()),
             "listings": _dedupe(listings), "warnings": warnings[:50], "modelCalls": calls,
             "model": getattr(model, "name", None)}
+
+
+_REF = re.compile(r"^[A-Z]{1,6}[-/ ]?\d{2,}[A-Z0-9-]*$", re.I)
+
+
+def _looks_like_ref(name: str) -> bool:
+    """'PUN-0004', 'A-1203', 'U12': a listing or unit code, not a project name."""
+    return bool(_REF.match(name.strip()))
 
 
 def _assign_project(rows: list[dict[str, Any]], named_here: list[str], projects: dict[str, Any]) -> None:

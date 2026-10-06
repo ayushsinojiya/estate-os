@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # Without a key, listing tables are still read in code; other pages are skipped.
     groq_api_key: str = ""
     extraction_base_url: str = "https://api.groq.com/openai/v1"
-    extraction_model: str = "llama-3.3-70b-versatile"
+    extraction_model: str = "openai/gpt-oss-120b"
 
     # ---- embeddings
     embedding_model: str = "text-embedding-3-small"

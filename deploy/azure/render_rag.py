@@ -43,7 +43,7 @@ PLAIN = {
     "VOICE_EMBED_BUDGET_MS": "300",
     "REWRITE_ON_VOICE": "false",
     "RAG_STORAGE_PATH": "/data/sources",
-    "EXTRACTION_MODEL": "llama-3.3-70b-versatile",
+    "EXTRACTION_MODEL": "openai/gpt-oss-120b",
 }
 
 

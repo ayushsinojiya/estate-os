@@ -107,3 +107,13 @@ async def test_a_retry_rereads_a_file_read_before_the_model_was_configured(clien
     again = (await client.get(url, headers=CRM)).json()
     assert again["status"] == "DONE" and again["extraction"]["model"] == "fake"
     assert len(again["extraction"]["listings"]) == 3
+
+
+async def test_a_listing_code_is_never_taken_for_a_project():
+    page = "## PUN-0004 - Buy - 3 BHK Apartment - Aundh\n| Price | ₹144.1 lakh | Area | 1194 sq ft |\n|---|---|---|---|\n"
+    model = FakeModel({"projects": [{"name": "PUN-0004", "location": "Aundh"}],
+                       "listings": [{"ref": "PUN-0004", "projectName": "PUN-0004", "price": "₹144.1 lakh",
+                                     "area": "1194 sq ft", "locality": "Aundh", "configuration": "3 BHK"}]})
+    result = await extract([(1, page)], "inventory_pack_01.pdf", model)
+    assert result["projects"] == []
+    assert result["listings"][0]["projectName"] is None and result["listings"][0]["locality"] == "Aundh"
