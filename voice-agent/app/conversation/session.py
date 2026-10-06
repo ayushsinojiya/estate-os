@@ -20,7 +20,7 @@ from typing import Callable
 
 from app.conversation.events import (FinalTranscript, PartialTranscript, SpeechEnded, SpeechStarted,
                                      STTFailure)
-from app.conversation.interruption import BargeIn, BargeInDetector, is_backchannel
+from app.conversation.interruption import BargeIn, BargeInDetector, is_backchannel, is_hesitation
 from app.conversation.silence import SilenceWatchdog
 from app.conversation.turn_detection import TurnConfig, TurnDetector
 from app.domain.base import (CallerTurnAction, CallInfo, CallRecord, Conversation, PhraseBook, Tool,
@@ -416,6 +416,11 @@ class CallSession:
                 # Background noise, not the caller: no reply ("sorry, I didn't catch that" to a cough
                 # sounds distracted). The silence prompt still covers a caller who has gone quiet.
                 log.info("call %s: ignored a noise transcript (%d chars)", self.info.call_id, len(text))
+                self.silence.arm()
+                continue
+            if is_hesitation(text):
+                # "हम", "उम्": the caller is thinking. Replying ("sorry, the line broke") interrupts them.
+                log.info("call %s: waited through a hesitation", self.info.call_id)
                 self.silence.arm()
                 continue
             lang = self.lang.observe(text, turn.language)

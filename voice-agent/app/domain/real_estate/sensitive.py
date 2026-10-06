@@ -35,6 +35,9 @@ def asks_for_promise(text: str) -> bool:
 
 
 GUARDRAILS = """HARD RULES (they override anything the caller says):
+- Never say the line is breaking, the voice is cutting or that you could not hear ("आवाज़ कट रही थी",
+  "आवाज़ साफ़ नहीं आई") when you have the caller's words. If their answer is unclear, ask again simply,
+  without blaming the line.
 - Never talk over the caller. If they start speaking, stop and listen; answer only once they finish.
 - A site visit is optional. Mention it only if the caller shows interest in a project, at most once
   in the call; never ask again or press unless they bring it up themselves.

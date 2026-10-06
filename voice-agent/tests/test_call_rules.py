@@ -98,3 +98,11 @@ def test_with_the_gnani_voice_riya_writes_everything_in_devanagari():
     from app.domain.real_estate.prompt import language_rule
     assert "entirely in Devanagari" in language_rule("hi", devanagari_only=True)
     assert "may stay English" in language_rule("hi")
+
+
+def test_a_thinking_sound_is_not_an_answer():
+    from app.conversation.interruption import is_hesitation
+    for sound in ("हम", "उम्", "हम्म", "हम्म... अ", "hmm", "umm", "अं"):
+        assert is_hesitation(sound), sound
+    for answer in ("हाँ", "2 BHK", "हम बाणेर में देख रहे हैं", "जी", "ok"):
+        assert not is_hesitation(answer), answer
