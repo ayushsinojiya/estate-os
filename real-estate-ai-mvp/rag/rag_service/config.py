@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     low_confidence_threshold: float = 0.6
     classifier_model: str = "gpt-4o-mini"
 
+    # ---- extraction of projects and listings for the CRM (any OpenAI-compatible API; Groq by default).
+    # Without a key, listing tables are still read in code; other pages are skipped.
+    groq_api_key: str = ""
+    extraction_base_url: str = "https://api.groq.com/openai/v1"
+    extraction_model: str = "llama-3.3-70b-versatile"
+
     # ---- embeddings
     embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536

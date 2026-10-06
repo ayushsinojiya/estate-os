@@ -23,6 +23,7 @@ beforeEach(() => {
   configureApi("crm-token", "7");
   fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
     if (url.includes("/knowledge/sources?")) return json(page([source]));
+    if (url.endsWith("/knowledge/imports")) return json({ items: [{ sourceId: id, status: "IMPORTED", projects: 2, units: 14 }] });
     if (url.includes("/files?")) return json(page([{ id: "12", originalFileName: "legacy.zip", fileSizeBytes: 1024, status: "STORED" }]));
     if (url.endsWith(`/knowledge/sources/${id}`) && !options?.method) return json({ ...source, versions: [{ version: 1, status: "PUBLISHED", createdAt: "2026-10-01T10:00:00Z" }], pages: [{ page: 1, provider: "openai:gpt-4o-mini", confidence: 0.95 }, { page: 2, provider: "pdf-text-layer", confidence: 0.5 }], lowConfidencePages: [2], warnings: ["1 page(s) were parsed with low confidence; check pages [2]"] });
     if (url.endsWith("/batches") || url.endsWith("/replace")) return json({ batchId: "batch-1", results: [{ id, filename: "new.csv", status: "UPLOADED" }] });
@@ -119,7 +120,9 @@ describe("knowledge sources", () => {
 
   it("polls a queued source until completion then stops", async () => {
     let reads = 0;
-    fetchMock.mockImplementation(async () => json(page([{ ...source, status: ++reads === 1 ? "PARSING" : "PUBLISHED" }])));
+    fetchMock.mockImplementation(async (url: string) => url.includes("/knowledge/sources?")
+      ? json(page([{ ...source, status: ++reads === 1 ? "PARSING" : "PUBLISHED" }]))
+      : json({ items: [] }));
     mount();
     expect(await within(await screen.findByRole("table")).findByText("Parsing")).toBeInTheDocument();
     await waitFor(() => expect(reads).toBe(2), { timeout: 3500 });

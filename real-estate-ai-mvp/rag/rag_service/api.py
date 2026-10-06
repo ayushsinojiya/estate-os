@@ -376,6 +376,27 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     async def source_detail(ws: int, source_id: str, request: Request) -> dict:
         return await _source_response(svc_dep(request), ws, _source_id(source_id))
 
+    @app.get("/v1/workspaces/{ws}/sources/{source_id}/extraction", dependencies=[Depends(crm)])
+    async def source_extraction(ws: int, source_id: str, request: Request, retry: bool = False) -> dict:
+        """Projects and listings read from the published version, for the CRM's Projects & inventory.
+        A version not read yet (published before extraction existed) is queued on first request."""
+        svc = svc_dep(request)
+        sid = _source_id(source_id)
+        doc = await svc.store.published_version(ws, sid)
+        if doc is None:
+            return {"sourceId": str(sid), "status": "NOT_PUBLISHED"}
+        status = doc["extraction_status"]
+        # A retry also re-reads a file that was read before the model was configured (tables only).
+        read_without_model = (status == "DONE" and svc.extraction_model is not None
+                              and not (doc["extraction"] or {}).get("model"))
+        if status == "NONE" or (retry and (status == "FAILED" or read_without_model)):
+            await svc.store.queue_extraction(doc)
+            status = "QUEUED"
+        return {"sourceId": str(sid), "version": doc["version"], "documentId": str(doc["id"]),
+                "fileName": doc["file_name"], "sha256": doc["sha256"], "crmDocumentId": _id(doc["crm_document_id"]),
+                "status": status, "error": doc["extraction_error"],
+                "extraction": doc["extraction"] if status == "DONE" else None}
+
     @app.post("/v1/workspaces/{ws}/sources/{source_id}/replace", dependencies=[Depends(crm)])
     async def replace(ws: int, source_id: str, request: Request, files: list[UploadFile] = File(...),
                       actor_id: int | None = Depends(actor)) -> JSONResponse:

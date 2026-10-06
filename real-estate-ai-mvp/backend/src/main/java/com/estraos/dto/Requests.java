@@ -30,7 +30,9 @@ public final class Requests {
       @Size(max = 40) String facing,
       @NotNull @DecimalMin("0") BigDecimal price,
       String status,
-      @NotBlank @Size(max = 40) String propertyType) {}
+      @NotBlank @Size(max = 40) String propertyType,
+      // SALE (default) or RENT; for RENT the price is the monthly rent.
+      String transactionType) {}
 
   public record Lead(
       @NotBlank @Size(max = 160) String name,

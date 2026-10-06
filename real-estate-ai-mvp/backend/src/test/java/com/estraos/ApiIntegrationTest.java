@@ -678,6 +678,21 @@ class ApiIntegrationTest {
   }
 
   @Test
+  void rentUnitsNeverReachTheVoiceAgentsSaleCatalogue() throws Exception {
+    Long project = db.queryForObject(
+        "SELECT id FROM projects WHERE workspace_id=? AND status='ACTIVE' ORDER BY id LIMIT 1", Long.class, Long.valueOf(ws));
+    // A monthly rent of 25,000 would look like the cheapest flat there is if it were read as a price.
+    db.update("INSERT INTO units(workspace_id,project_id,unit_number,status,price,area,bhk,property_type,transaction_type)"
+        + " VALUES (?,?,'RENT-TEST','AVAILABLE',25000,700,2,'APARTMENT','RENT')", Long.valueOf(ws), project);
+    try {
+      JsonNode cheap = send("POST", "/voice/units/search", Map.of("budgetInr", 30000, "limit", 20), token, ws, 200);
+      assertEquals(0, cheap.get("matches").size(), "a rent was offered as a sale price");
+    } finally {
+      db.update("DELETE FROM units WHERE unit_number='RENT-TEST'");
+    }
+  }
+
+  @Test
   void voiceUnitSearchPutsOptionsWithinBudgetBeforeNearMisses() throws Exception {
     JsonNode all = send("POST", "/voice/units/search", Map.of("limit", 20), token, ws, 200);
     // A budget just above the cheapest option: everything up to 10% over it may still be offered.
