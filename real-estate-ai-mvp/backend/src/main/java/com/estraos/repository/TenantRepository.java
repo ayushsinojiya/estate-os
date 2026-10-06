@@ -5,6 +5,7 @@ import com.estraos.exception.ApiException;
 import com.estraos.mapper.DtoMapper;
 import java.sql.*;
 import java.time.*;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -108,6 +109,13 @@ public class TenantRepository {
   }
 
   public Map<String, Object> get(String table, Long ws, Long id) {
+    Map<String, Object> record = getIncludingDeleted(table, ws, id);
+    if (Set.of("leads", "voice_sessions").contains(table) && record.get("deletedAt") != null)
+      throw ApiException.missing();
+    return record;
+  }
+
+  public Map<String, Object> getIncludingDeleted(String table, Long ws, Long id) {
     var rows =
         db.query(
             "SELECT * FROM " + table(table) + " WHERE workspace_id=:ws AND id=:id",
@@ -132,7 +140,9 @@ public class TenantRepository {
             + table(table)
             + " WHERE workspace_id=:ws AND "
             + column
-            + "=:id ORDER BY created_at DESC",
+            + "=:id"
+            + (table.equals("voice_sessions") ? " AND deleted_at IS NULL" : "")
+            + " ORDER BY created_at DESC",
         Map.of("ws", ws, "id", id),
         this::row);
   }
@@ -143,8 +153,23 @@ public class TenantRepository {
     if (page < 0 || page > 100000 || size < 1 || size > 100)
       throw ApiException.bad("Page must be nonnegative and size between 1 and 100");
     StringBuilder where = new StringBuilder(" WHERE workspace_id=:ws");
+    if (Set.of("leads", "voice_sessions").contains(table))
+      where.append(" AND deleted_at IS NULL");
     Map<String, Object> p = new HashMap<>();
     p.put("ws", ws);
+    Instant dateFrom = filterInstant(filters.get("dateFrom"));
+    Instant dateTo = filterInstant(filters.get("dateTo"));
+    if (dateFrom != null && dateTo != null && !dateFrom.isBefore(dateTo))
+      throw ApiException.bad("Date from must be before date to");
+    String dateColumn = table.equals("appointments") ? "scheduled_at" : "created_at";
+    if (dateFrom != null) {
+      where.append(" AND ").append(dateColumn).append(" >= :dateFrom");
+      p.put("dateFrom", Timestamp.from(dateFrom));
+    }
+    if (dateTo != null) {
+      where.append(" AND ").append(dateColumn).append(" < :dateTo");
+      p.put("dateTo", Timestamp.from(dateTo));
+    }
     String search = filters.get("search");
     if (search != null && !search.isBlank()) {
       where.append(" AND (data::text ILIKE :search");
@@ -262,6 +287,15 @@ public class TenantRepository {
 
   private int integer(String value, int fallback) {
     return value == null ? fallback : Integer.parseInt(value);
+  }
+
+  private Instant filterInstant(String value) {
+    if (value == null || value.isBlank()) return null;
+    try {
+      return Instant.parse(value);
+    } catch (DateTimeParseException ex) {
+      throw ApiException.bad("Date filters must be UTC ISO timestamps");
+    }
   }
 
   public Map<String, Object> save(

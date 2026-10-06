@@ -336,6 +336,7 @@ export function Units() {
         <Filters {...l} statuses={unitStatuses} />
         <Async query={l.query}>
           <DataTable
+            dateFilter={false}
             data={list(l.query.data)}
             columns={[
               {
@@ -537,6 +538,7 @@ export function Documents() {
         <Filters {...documentList} statuses={["DRAFT", "PUBLISHED"]} />
         <Async query={q}>
           <DataTable
+            dateFilter={false}
             data={list(q.data)}
             columns={[
               {

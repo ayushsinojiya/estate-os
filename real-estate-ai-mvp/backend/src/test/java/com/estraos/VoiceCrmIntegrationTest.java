@@ -47,6 +47,9 @@ class VoiceCrmIntegrationTest {
     r.add("app.demo-password", () -> PASSWORD);
     r.add("spring.flyway.enabled", () -> true);
     r.add("app.integrations.mode", () -> "mock");
+    r.add("app.integrations.rag.url", () -> "");
+    r.add("app.integrations.voice.url", () -> "");
+    r.add("app.integrations.notification.url", () -> "");
     r.add("app.notifications.reminders-enabled", () -> false);
     r.add("app.knowledge.sync-enabled", () -> false);
     r.add("app.calls.scheduler-enabled", () -> false);

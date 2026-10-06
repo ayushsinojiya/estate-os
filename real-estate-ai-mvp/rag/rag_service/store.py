@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import psycopg
@@ -282,7 +283,8 @@ class Store:
         return None if row is None else await self.source(workspace_id, row["source_id"])
 
     async def list_sources(self, workspace_id: int, *, page: int, size: int, search: str = "",
-                           status: str = "", project_id: int | None = None) -> dict[str, Any]:
+                           status: str = "", project_id: int | None = None,
+                           date_from: datetime | None = None, date_to: datetime | None = None) -> dict[str, Any]:
         where = ["d.workspace_id=%s", "d.version = (SELECT max(version) FROM kb_documents x"
                  " WHERE x.workspace_id=d.workspace_id AND x.source_id=d.source_id)", "d.status <> 'DELETED'"]
         params: list[Any] = [workspace_id]
@@ -296,6 +298,12 @@ class Store:
         if project_id is not None:
             where.append("d.project_id=%s")
             params.append(project_id)
+        if date_from is not None:
+            where.append("d.created_at >= %s")
+            params.append(date_from)
+        if date_to is not None:
+            where.append("d.created_at < %s")
+            params.append(date_to)
         clause = " AND ".join(where)
         async with self.db.conn() as conn:
             total = (await (await conn.execute(f"SELECT count(*) AS n FROM kb_documents d WHERE {clause}",

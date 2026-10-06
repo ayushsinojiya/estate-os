@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import {
   Link,
   useNavigate,
@@ -7,6 +8,7 @@ import {
 } from "react-router-dom";
 import { CalendarDays, Handshake, Phone, Plus, Sparkles } from "../components/icons";
 import { useApi } from "../hooks/useApi";
+import { useAuth } from "../hooks/useAuth";
 import { useList } from "../hooks/useList";
 import {
   Async,
@@ -51,6 +53,7 @@ export function Leads() {
         <Filters {...l} statuses={leadStatuses} />
         <Async query={l.query}>
           <DataTable
+            dateFilter={false}
             data={list(l.query.data)}
             columns={[
               {
@@ -133,12 +136,167 @@ export function Leads() {
     </>
   );
 }
+const relatedTabs = [
+  { key: "properties", label: "Suggested properties" },
+  { key: "calls", label: "Call history" },
+  { key: "visits", label: "Site visits & handovers" },
+] as const;
+type RelatedTab = (typeof relatedTabs)[number]["key"];
+
+function LeadRelatedRecords({ lead }: { lead: Entity }) {
+  const [activeTab, setActiveTab] = useState<RelatedTab>("properties");
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const id = useId();
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % relatedTabs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + relatedTabs.length) % relatedTabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = relatedTabs.length - 1;
+    else return;
+    event.preventDefault();
+    setActiveTab(relatedTabs[next].key);
+    tabRefs.current[next]?.focus();
+  }
+
+  return (
+    <section className="panel" aria-labelledby={`${id}-heading`}>
+      <div className="panel-heading"><h2 id={`${id}-heading`}>Related records</h2></div>
+      <div className="lead-related-tabs" role="tablist" aria-label="Lead related records">
+        {relatedTabs.map((tab, index) => (
+          <button
+            key={tab.key}
+            ref={(element) => { tabRefs.current[index] = element; }}
+            type="button"
+            role="tab"
+            id={`${id}-${tab.key}`}
+            aria-controls={`${id}-panel`}
+            aria-selected={activeTab === tab.key}
+            tabIndex={activeTab === tab.key ? 0 : -1}
+            className="lead-related-tab"
+            onClick={() => setActiveTab(tab.key)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${activeTab}`} tabIndex={0}>
+        {activeTab === "properties" && (
+          <DataTable
+            data={list(lead.recommendations).map((r: Entity, i: number) => ({
+              ...r,
+              id: r.id || r.unit?.id || String(i),
+            }))}
+            columns={[
+              { key: "project", label: "Project", render: (r) => r.project?.name || r.projectName },
+              { key: "unit", label: "Unit", render: (r) => r.unit?.unitNumber || r.unitNumber },
+              { key: "reason", label: "Match context" },
+            ]}
+          />
+        )}
+        {activeTab === "calls" && (
+          <DataTable
+            data={list(lead.calls)}
+            columns={[
+              {
+                key: "createdAt",
+                label: "Conversation",
+                render: (c) => <Link className="text-link" to={`/calls/${c.id}`}>{date(c.createdAt)}</Link>,
+              },
+              { key: "status", label: "Status", render: (c) => <Badge value={c.status} /> },
+              { key: "outcome", label: "Outcome" },
+            ]}
+          />
+        )}
+        {activeTab === "visits" && (
+          <>
+            <DataTable
+              data={list(lead.siteVisits)}
+              columns={[
+                {
+                  key: "scheduledAt",
+                  label: "Visit",
+                  render: (v) => <Link className="text-link" to={`/site-visits/${v.id}`}>{date(v.scheduledAt)}</Link>,
+                },
+                { key: "status", label: "Status", render: (v) => <Badge value={v.status} /> },
+              ]}
+            />
+            <div className="p-5 border-t">
+              {list(lead.handovers).length ? (
+                list(lead.handovers).map((h: Entity) => (
+                  <div key={h.id} className="flex justify-between gap-4 py-2">
+                    <span>Handover · {date(h.createdAt)}</span>
+                    <Badge value={h.status} />
+                  </div>
+                ))
+              ) : (
+                <p className="text-muted">No handover yet.</p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ActivityTimeline({ activities }: { activities: Entity[] }) {
+  const [visibleCount, setVisibleCount] = useState(5);
+  const listId = useId();
+  const ordered = [...activities].sort(
+    (a, b) => (Date.parse(String(b.createdAt ?? "")) || 0) - (Date.parse(String(a.createdAt ?? "")) || 0),
+  );
+  const remaining = ordered.length - visibleCount;
+
+  return (
+    <section className="panel h-fit">
+      <div className="panel-heading">
+        <h2>Activity timeline</h2>
+      </div>
+      {ordered.length ? (
+        <>
+          <div className="activity-list" id={listId}>
+            {ordered.slice(0, visibleCount).map((activity) => (
+              <div className="activity-row" key={activity.id}>
+                <span className="activity-dot" />
+                <div>
+                  <strong>{activity.description || label(activity.action || activity.type)}</strong>
+                  <small>{date(activity.createdAt)}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+          {ordered.length > 5 && (
+            <div className="border-t border-[#edf0ee] px-6 py-4">
+              <button
+                type="button"
+                className="text-link text-sm"
+                aria-controls={listId}
+                aria-expanded={visibleCount > 5}
+                onClick={() => setVisibleCount(remaining > 0 ? visibleCount + 5 : 5)}
+              >
+                {remaining > 0 ? `Show ${Math.min(5, remaining)} more` : "Show less"}
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <Empty title="A fresh start" description="Updates to this lead will appear here." />
+      )}
+    </section>
+  );
+}
+
 export function LeadDetail() {
   const { id = "" } = useParams();
   const q = useApi(`/leads/${id}`);
   const members = useApi("/members");
   const [edit, setEdit] = useState(false);
   const [call, setCall] = useState(false);
+  const [remove, setRemove] = useState(false);
+  const { canManage } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const d = q.data || {};
@@ -162,6 +320,9 @@ export function LeadDetail() {
               <Phone size={16} />
               Start call
             </button>
+            {canManage && q.data && (
+              <button className="btn-danger" onClick={() => setRemove(true)}>Remove lead</button>
+            )}
           </>
         }
       />
@@ -200,7 +361,7 @@ export function LeadDetail() {
           </Link>
         </div>
         <div className="detail-columns">
-          <div className="space-y-6">
+          <div className="min-w-0 space-y-6">
             <section className="panel p-6">
               <h2 className="mb-5">Customer requirements</h2>
               <Details
@@ -251,118 +412,12 @@ export function LeadDetail() {
                 </article>
               ))}
             </section>
-            <LeadCallbacks lead={d} />
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Suggested properties</h2>
-              </div>
-              <DataTable
-                data={list(d.recommendations).map((r: any, i: number) => ({
-                  ...r,
-                  id: r.id || r.unit?.id || String(i),
-                }))}
-                columns={[
-                  {
-                    key: "project",
-                    label: "Project",
-                    render: (r) => r.project?.name || r.projectName,
-                  },
-                  {
-                    key: "unit",
-                    label: "Unit",
-                    render: (r) => r.unit?.unitNumber || r.unitNumber,
-                  },
-                  { key: "reason", label: "Match context" },
-                ]}
-              />
-            </section>
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Call history</h2>
-              </div>
-              <DataTable
-                data={list(d.calls)}
-                columns={[
-                  {
-                    key: "createdAt",
-                    label: "Conversation",
-                    render: (c) => (
-                      <Link className="text-link" to={`/calls/${c.id}`}>
-                        {date(c.createdAt)}
-                      </Link>
-                    ),
-                  },
-                  {
-                    key: "status",
-                    label: "Status",
-                    render: (c) => <Badge value={c.status} />,
-                  },
-                  { key: "outcome", label: "Outcome" },
-                ]}
-              />
-            </section>
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Site visits & handovers</h2>
-              </div>
-              <DataTable
-                data={list(d.siteVisits)}
-                columns={[
-                  {
-                    key: "scheduledAt",
-                    label: "Visit",
-                    render: (v) => (
-                      <Link className="text-link" to={`/site-visits/${v.id}`}>
-                        {date(v.scheduledAt)}
-                      </Link>
-                    ),
-                  },
-                  {
-                    key: "status",
-                    label: "Status",
-                    render: (v) => <Badge value={v.status} />,
-                  },
-                ]}
-              />
-              <div className="p-5 border-t">
-                {list(d.handovers).length ? (
-                  list(d.handovers).map((h: Entity) => (
-                    <div key={h.id} className="flex justify-between gap-4 py-2">
-                      <span>Handover · {date(h.createdAt)}</span>
-                      <Badge value={h.status} />
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-muted">No handover yet.</p>
-                )}
-              </div>
-            </section>
+            <LeadRelatedRecords lead={d} />
           </div>
-          <section className="panel h-fit">
-            <div className="panel-heading">
-              <h2>Activity timeline</h2>
-            </div>
-            {list(d.activities).length ? (
-              <div className="activity-list">
-                {list(d.activities).map((a: Entity) => (
-                  <div className="activity-row" key={a.id}>
-                    <span className="activity-dot" />
-                    <div>
-                      <strong>
-                        {a.description || label(a.action || a.type)}
-                      </strong>
-                      <small>{date(a.createdAt)}</small>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Empty
-                title="A fresh start"
-                description="Updates to this lead will appear here."
-              />
-            )}
-          </section>
+          <div className="min-w-0 space-y-6">
+            <ActivityTimeline key={id} activities={list(d.activities)} />
+            <LeadCallbacks lead={d} />
+          </div>
         </div>
       </Async>
       {edit && (
@@ -396,6 +451,27 @@ export function LeadDetail() {
               setCall(false);
               toast(result.mock ? "Simulated call created" : "Call requested");
               navigate(`/calls/${result.id}`);
+            }}
+          />
+        </Modal>
+      )}
+      {remove && (
+        <Modal title="Remove lead?" onClose={() => setRemove(false)}>
+          <p className="text-muted mb-5">
+            {d.name} will be hidden from leads and conversations. Past visits and audit history are kept.
+            Active visits, conversations, or handovers must be resolved first.
+          </p>
+          <RecordForm
+            fields={[]}
+            submitLabel="Confirm removal"
+            danger
+            onCancel={() => setRemove(false)}
+            onSubmit={async () => {
+              await write(`/leads/${id}`, null, "DELETE");
+              await queryClient.invalidateQueries();
+              setRemove(false);
+              toast("Lead removed");
+              navigate("/leads");
             }}
           />
         </Modal>

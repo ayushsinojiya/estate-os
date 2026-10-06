@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { Details, PageHeader } from "../components/ui";
-import { AuthProvider } from "../hooks/useAuth";
-import { App } from "../routes/App";
+import { Details, PageHeader } from "../src/components/ui";
+import { AuthProvider } from "../src/hooks/useAuth";
+import { App } from "../src/routes/App";
 
 beforeEach(() => {
   localStorage.clear();

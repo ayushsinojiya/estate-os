@@ -38,7 +38,7 @@ The backend URL must be reachable by the user's browser, not only by Docker netw
 
 ## Architecture and behavior
 
-`src/api` owns the bearer-token and workspace HTTP client. `src/hooks` owns session/workspace context and React Query access. `src/features` contains workflow field definitions. `src/components` provides accessible dialogs, forms, tables and feedback states. `src/pages`, `src/layouts`, and `src/routes` organize the screens. `src/test` contains user workflow tests.
+`src/api` owns the bearer-token and workspace HTTP client. `src/hooks` owns session/workspace context and React Query access. `src/features` contains workflow field definitions. `src/components` provides accessible dialogs, forms, tables and feedback states. `src/pages`, `src/layouts`, and `src/routes` organize the screens. `tests` contains frontend tests and their setup, separate from production source.
 
 IDs are opaque decimal strings in browser state and request bodies, preserving PostgreSQL BIGINT precision. Workspace IDs are headers and every request is still checked for membership by the backend. Switching workspace clears the query cache. Tokens are stored in per-tab session storage, verified against `/auth/me` on startup, removed on logout and cleared on 401. Protect the deployed application with HTTPS and a suitable CSP; session storage is accessible to scripts running in the same origin.
 

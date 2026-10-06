@@ -199,7 +199,8 @@ public class OutboundCallScheduler {
   @Transactional
   public int scheduleReengagement() {
     var leads = jdbc.queryForList(
-        "SELECT l.workspace_id, l.id FROM leads l WHERE l.status IN ('CONTACTED','QUALIFIED') AND"
+        "SELECT l.workspace_id, l.id FROM leads l WHERE l.deleted_at IS NULL"
+            + " AND l.status IN ('CONTACTED','QUALIFIED') AND"
             + " coalesce((l.data->>'doNotCall')::boolean, false) = false AND l.updated_at < now() - make_interval(days => ?)"
             + " AND NOT EXISTS (SELECT 1 FROM lead_activities a WHERE a.workspace_id=l.workspace_id AND"
             + "  a.lead_id=l.id AND a.created_at > now() - make_interval(days => ?))"

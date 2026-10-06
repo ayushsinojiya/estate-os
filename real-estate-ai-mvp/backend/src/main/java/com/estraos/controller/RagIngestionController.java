@@ -25,8 +25,10 @@ public class RagIngestionController {
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
       @RequestParam(defaultValue = "") String search,
-      @RequestParam(defaultValue = "") String status) {
-    return ingestion.list(workspace, page, size, search, status);
+      @RequestParam(defaultValue = "") String status,
+      @RequestParam(defaultValue = "") String dateFrom,
+      @RequestParam(defaultValue = "") String dateTo) {
+    return ingestion.list(workspace, page, size, search, status, dateFrom, dateTo);
   }
 
   @GetMapping("/sources/{id}")

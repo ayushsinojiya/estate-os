@@ -44,6 +44,9 @@ class ApiIntegrationTest {
     r.add("app.demo-password", () -> PASSWORD);
     r.add("spring.flyway.enabled", () -> true);
     r.add("app.integrations.mode", () -> "mock");
+    r.add("app.integrations.rag.url", () -> "");
+    r.add("app.integrations.voice.url", () -> "");
+    r.add("app.integrations.notification.url", () -> "");
     r.add("app.notifications.reminders-enabled", () -> false);
     r.add("app.knowledge.sync-enabled", () -> false);
     r.add("app.calls.scheduler-enabled", () -> false);
@@ -96,6 +99,7 @@ class ApiIntegrationTest {
         switch (method) {
           case "POST" -> post("/api/v1" + path);
           case "PUT" -> put("/api/v1" + path);
+          case "DELETE" -> delete("/api/v1" + path);
           default -> get("/api/v1" + path);
         };
     request.contentType(MediaType.APPLICATION_JSON);
@@ -828,6 +832,113 @@ class ApiIntegrationTest {
                 .header("X-Workspace-Id", ws))
         .andExpect(
             org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+  }
+
+  @Test
+  void listDateRangeFiltersBeforePaginationAndUsesVisitSchedule() throws Exception {
+    var first = send("POST", "/leads", leadBody(), token, ws, 201);
+    var second = send("POST", "/leads", leadBody(), token, ws, 201);
+    db.update("UPDATE leads SET created_at='2020-01-05T08:00:00Z' WHERE id=?", first.get("id").asLong());
+    db.update("UPDATE leads SET created_at='2020-01-06T08:00:00Z' WHERE id=?", second.get("id").asLong());
+
+    var filtered = send("GET", "/leads?dateFrom=2020-01-05T00:00:00Z&dateTo=2020-01-06T00:00:00Z&size=1", null, token, ws, 200);
+    assertEquals(1, filtered.get("total").asInt());
+    assertEquals(first.get("id").asText(), filtered.get("items").get(0).get("id").asText());
+
+    Long visitId = db.queryForObject("INSERT INTO appointments(workspace_id,project_id,lead_id,agent_id,scheduled_at,duration_minutes,status,created_at) VALUES (?,?,?,?,'2020-01-05T12:00:00Z',60,'CONFIRMED','2020-01-04T12:00:00Z') RETURNING id", Long.class,
+        Long.valueOf(ws), Long.valueOf(projectId), first.get("id").asLong(), Long.valueOf(agentId));
+    var visits = send("GET", "/site-visits?dateFrom=2020-01-05T00:00:00Z&dateTo=2020-01-06T00:00:00Z", null, token, ws, 200);
+    assertTrue(visits.get("items").toString().contains(visitId.toString()));
+    send("GET", "/leads?dateFrom=not-a-date", null, token, ws, 400);
+  }
+
+  @Test
+  void managedFileListFiltersByUploadDateBeforeCounting() throws Exception {
+    Long userId = db.queryForObject("SELECT id FROM users WHERE email='admin@estraos.demo'", Long.class);
+    db.update("INSERT INTO managed_files(workspace_id,original_file_name,file_extension,file_size_bytes,status,created_by,created_at) VALUES (?,?,?,?,?,?,?::timestamptz)",
+        Long.valueOf(ws), "old-date-filter.txt", "txt", 1, "STORED", userId, "2020-02-01T10:00:00Z");
+    db.update("INSERT INTO managed_files(workspace_id,original_file_name,file_extension,file_size_bytes,status,created_by,created_at) VALUES (?,?,?,?,?,?,?::timestamptz)",
+        Long.valueOf(ws), "new-date-filter.txt", "txt", 1, "STORED", userId, "2020-02-02T10:00:00Z");
+    var filtered = send("GET", "/files?dateFrom=2020-02-01T00:00:00Z&dateTo=2020-02-02T00:00:00Z&size=1", null, token, ws, 200);
+    assertEquals(1, filtered.get("total").asInt());
+    assertEquals("old-date-filter.txt", filtered.get("items").get(0).get("originalFileName").asText());
+  }
+
+  @Test
+  void removingLeadHidesItCancelsScheduledContactAndFreesItsPhone() throws Exception {
+    Map<String, Object> body = leadBody();
+    String leadId = send("POST", "/leads", body, token, ws, 201).get("id").asText();
+    send("POST", "/leads/" + leadId + "/callbacks",
+        Map.of("dueAt", Instant.now().plusSeconds(86400).toString(), "reason", "Follow up"),
+        token, ws, 201);
+    long before = send("GET", "/dashboard", null, token, ws, 200)
+        .get("metrics").get("totalLeads").asLong();
+
+    send("DELETE", "/leads/" + leadId, null, token, other, 404);
+    send("DELETE", "/leads/" + leadId, null, token, ws, 204);
+    send("GET", "/leads/" + leadId, null, token, ws, 404);
+    assertFalse(send("GET", "/leads?size=100", null, token, ws, 200).get("items").toString()
+        .contains("\"id\":\"" + leadId + "\""));
+    assertEquals(before - 1, send("GET", "/dashboard", null, token, ws, 200)
+        .get("metrics").get("totalLeads").asLong());
+    assertEquals("CANCELLED", db.queryForObject(
+        "SELECT status FROM callbacks WHERE workspace_id=? AND lead_id=? ORDER BY id DESC LIMIT 1",
+        String.class, Long.valueOf(ws), Long.valueOf(leadId)));
+    assertEquals(0L, db.queryForObject(
+        "SELECT count(*) FROM scheduled_calls WHERE workspace_id=? AND lead_id=? AND status='SCHEDULED'",
+        Long.class, Long.valueOf(ws), Long.valueOf(leadId)));
+    assertNotEquals(leadId, send("POST", "/leads", body, token, ws, 201).get("id").asText());
+  }
+
+  @Test
+  void activeVisitBlocksLeadRemovalUntilItIsCancelled() throws Exception {
+    String leadId = send("POST", "/leads", leadBody(), token, ws, 201).get("id").asText();
+    Map<String, Object> visit = new LinkedHashMap<>(Map.of(
+        "leadId", leadId, "projectId", projectId, "agentId", agentId,
+        "scheduledAt", Instant.now().plusSeconds(400L * 86400).toString(),
+        "durationMinutes", 60, "status", "CONFIRMED"));
+    String visitId = send("POST", "/site-visits", visit, token, ws, 201).get("id").asText();
+
+    send("DELETE", "/leads/" + leadId, null, token, ws, 409);
+    visit.put("status", "CANCELLED");
+    send("PUT", "/site-visits/" + visitId, visit, token, ws, 200);
+    send("DELETE", "/leads/" + leadId, null, token, ws, 204);
+  }
+
+  @Test
+  void completedConversationCanBeRemovedButQueuedOneCannot() throws Exception {
+    String leadId = send("POST", "/leads", leadBody(), token, ws, 201).get("id").asText();
+    Map<String, Object> record = callRecord(leadId, "delete-test-" + System.nanoTime());
+    String completedId = send("POST", "/calls/ingest",
+        record, token, ws, 200).get("id").asText();
+    long queuedId = db.queryForObject(
+        "INSERT INTO voice_sessions(workspace_id,lead_id,status,data) VALUES (?,?,?, '{}'::jsonb) RETURNING id",
+        Long.class, Long.valueOf(ws), Long.valueOf(leadId), "QUEUED");
+
+    send("DELETE", "/calls/" + queuedId, null, token, ws, 409);
+    send("DELETE", "/calls/" + completedId, null, token, other, 404);
+    send("DELETE", "/calls/" + completedId, null, token, ws, 204);
+    send("GET", "/calls/" + completedId, null, token, ws, 404);
+    assertEquals(completedId,
+        send("POST", "/calls/ingest", record, token, ws, 200).get("id").asText());
+    send("GET", "/calls/" + completedId, null, token, ws, 404);
+    assertFalse(send("GET", "/leads/" + leadId, null, token, ws, 200).get("calls").toString()
+        .contains("\"id\":\"" + completedId + "\""));
+  }
+
+  @Test
+  void agentsCannotRemoveLeadsOrConversations() throws Exception {
+    String leadId = send("POST", "/leads", leadBody(), token, ws, 201).get("id").asText();
+    String callId = send("POST", "/calls/ingest",
+        callRecord(leadId, "agent-delete-test-" + System.nanoTime()), token, ws, 200)
+        .get("id").asText();
+    String agentToken = send("POST", "/auth/login",
+        Map.of("email", "agent@estraos.demo", "password", PASSWORD), null, null, 200)
+        .get("token").asText();
+    send("DELETE", "/leads/" + leadId, null, agentToken, ws, 403);
+    send("DELETE", "/calls/" + callId, null, agentToken, ws, 403);
+    send("GET", "/leads/" + leadId, null, token, ws, 200);
+    send("GET", "/calls/" + callId, null, token, ws, 200);
   }
 
   private long reminderCount(String type, String resource, String status) {

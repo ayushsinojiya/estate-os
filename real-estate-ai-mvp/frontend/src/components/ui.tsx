@@ -16,6 +16,8 @@ import type { Entity, Field, Page } from "../types";
 import { label } from "../utils/format";
 import { AsyncSelect } from "./AsyncSelect";
 import { DateTimePicker } from "./DateTimePicker";
+import { DateRangeFilter } from "./DateRangeFilter";
+import { inDateRange } from "../utils/dateFilter";
 import { CustomSelect } from "./CustomSelect";
 import { ContactLink } from "./ContactLink";
 import { usePageMetadata } from "../hooks/usePageMetadata";
@@ -165,12 +167,14 @@ export function RecordForm({
   onSubmit,
   onCancel,
   submitLabel = "Save changes",
+  danger = false,
 }: {
   fields: Field[];
   initial?: Record<string, any>;
   onSubmit: (data: Record<string, any>) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
+  danger?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -345,7 +349,7 @@ export function RecordForm({
             Cancel
           </button>
         )}
-        <button className="btn-primary" disabled={busy} type="submit">
+        <button className={danger ? "btn-danger" : "btn-primary"} disabled={busy} type="submit">
           {busy ? (
             <LoaderCircle size={16} className="animate-spin" />
           ) : (
@@ -367,21 +371,27 @@ export function DataTable({
   columns,
   empty,
   actions,
+  dateFilter = true,
 }: {
   data: Entity[];
   columns: Column[];
   empty?: string;
   actions?: (item: Entity) => ReactNode;
+  dateFilter?: boolean;
 }) {
-  if (!data?.length)
-    return (
-      <Empty
-        title={empty || "No results found"}
-        description="Try changing your filters or add a new record."
-      />
-    );
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const dateColumn = columns.find((column) => /(?:At|Date|timestamp)$/i.test(column.key));
+  const dateKey = dateColumn?.key || ["scheduledAt", "createdAt", "updatedAt", "lastAssignedAt"]
+    .find((key) => data?.some((row) => typeof row[key] === "string"));
+  const showDateFilter = dateFilter && !!dateKey;
+  const rows = showDateFilter ? data.filter((row) => inDateRange(row[dateKey], dateFrom, dateTo)) : data;
   return (
-    <div className="table-wrap">
+    <div className="table-container">
+      {showDateFilter && <div className="table-date-filter"><DateRangeFilter from={dateFrom} to={dateTo}
+        onFrom={setDateFrom} onTo={setDateTo} /></div>}
+      {!rows?.length ? <Empty title={empty || "No results found"}
+        description="Try changing your filters or add a new record." /> : <div className="table-wrap">
       <table>
         <thead>
           <tr>
@@ -396,7 +406,7 @@ export function DataTable({
           </tr>
         </thead>
         <tbody>
-          {data.map((row) => (
+          {rows.map((row) => (
             <tr key={row.id}>
               {columns.map((c) => (
                 <td key={c.key}>
@@ -408,6 +418,7 @@ export function DataTable({
           ))}
         </tbody>
       </table>
+      </div>}
     </div>
   );
 }
@@ -420,6 +431,10 @@ export function Filters({
   sort,
   onSort,
   sortOptions,
+  dateFrom,
+  dateTo,
+  onDateFrom,
+  onDateTo,
 }: {
   search: string;
   onSearch: (s: string) => void;
@@ -429,6 +444,10 @@ export function Filters({
   sort?: string;
   onSort?: (s: string) => void;
   sortOptions?: { value: string; label: string }[];
+  dateFrom?: string;
+  dateTo?: string;
+  onDateFrom?: (value: string) => void;
+  onDateTo?: (value: string) => void;
 }) {
   return (
     <div className="filters">
@@ -446,6 +465,8 @@ export function Filters({
       {onSort && (
         <CustomSelect id="sort-records" label="Sort records" value={sort || ""} onChange={onSort} options={sortOptions || [{ value: "createdAt,desc", label: "Newest first" }, { value: "createdAt,asc", label: "Oldest first" }]} />
       )}
+      {onDateFrom && onDateTo && <DateRangeFilter from={dateFrom || ""} to={dateTo || ""}
+        onFrom={onDateFrom} onTo={onDateTo} />}
     </div>
   );
 }

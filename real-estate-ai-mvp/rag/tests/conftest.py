@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import os
+import asyncio
+import sys
 from contextlib import asynccontextmanager
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import httpx
 import pytest

@@ -234,6 +234,13 @@ public class ApiController {
     return service.saveLead(ws, id, body);
   }
 
+  @DeleteMapping("/leads/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteLead(
+      @RequestHeader("X-Workspace-Id") @Positive Long ws, @PathVariable @Positive Long id) {
+    service.deleteLead(ws, id);
+  }
+
   @GetMapping("/leads/{id}/activities")
   public List<?> leadActivities(
       @RequestHeader("X-Workspace-Id") @Positive Long ws, @PathVariable @Positive Long id) {
@@ -277,8 +284,10 @@ public class ApiController {
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "10") int size,
       @RequestParam(defaultValue = "") String search,
-      @RequestParam(defaultValue = "") String status) {
-    return managedFiles.list(ws, page, size, search, status);
+      @RequestParam(defaultValue = "") String status,
+      @RequestParam(defaultValue = "") String dateFrom,
+      @RequestParam(defaultValue = "") String dateTo) {
+    return managedFiles.list(ws, page, size, search, status, dateFrom, dateTo);
   }
 
   @PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -398,6 +407,13 @@ public class ApiController {
   public Map<String, Object> call(
       @RequestHeader("X-Workspace-Id") @Positive Long ws, @PathVariable @Positive Long id) {
     return service.get("voice_sessions", ws, id);
+  }
+
+  @DeleteMapping("/calls/{id}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteCall(
+      @RequestHeader("X-Workspace-Id") @Positive Long ws, @PathVariable @Positive Long id) {
+    service.deleteCall(ws, id);
   }
 
   @PostMapping("/calls")

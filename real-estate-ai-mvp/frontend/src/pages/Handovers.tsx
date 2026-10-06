@@ -126,6 +126,7 @@ export function Handovers() {
         />
         <Async query={l.query}>
           <DataTable
+            dateFilter={false}
             data={list(l.query.data)}
             columns={[
               {

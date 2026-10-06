@@ -155,7 +155,8 @@ public class EstateService {
     }
     if (table.equals("handover_records")) {
       Long lead = id(result.get("leadId"));
-      result.put("lead", repo.get("leads", ws, lead));
+      // A completed handover remains a historical record after its lead is removed.
+      result.put("lead", repo.getIncludingDeleted("leads", ws, lead));
       result.put("calls", repo.related("voice_sessions", ws, "lead_id", lead));
       result.put("siteVisits", repo.related("appointments", ws, "lead_id", lead));
       result.put("recommendations", suggestions(ws, lead));
@@ -389,6 +390,69 @@ public class EstateService {
     event(ws, resource == null ? "LEAD_CREATED" : "LEAD_UPDATED", "LEAD", uuid);
     if (resource == null && fromWebOrPortal(request.source())) schedule.newLead(ws, uuid);
     return saved;
+  }
+
+  @Transactional
+  public void deleteLead(Long ws, Long resource) {
+    tenant.manage(ws);
+    repo.workspaceLock(ws);
+    repo.get("leads", ws, resource);
+    Map<String, Object> params = Map.of("ws", ws, "lead", resource);
+    long activeVisits = repo.sql().queryForObject(
+        "SELECT count(*) FROM appointments WHERE workspace_id=:ws AND lead_id=:lead"
+            + " AND status IN ('REQUESTED','CONFIRMED','RESCHEDULED')", params, Long.class);
+    if (activeVisits > 0)
+      throw ApiException.conflict("Cancel the lead's active site visits before removing it");
+    long activeCalls = repo.sql().queryForObject(
+        "SELECT count(*) FROM voice_sessions WHERE workspace_id=:ws AND lead_id=:lead"
+            + " AND deleted_at IS NULL"
+            + " AND status NOT IN ('COMPLETED','FAILED','NO_ANSWER','CANCELLED')",
+        params, Long.class);
+    if (activeCalls > 0)
+      throw ApiException.conflict("Wait for the lead's active conversations to finish");
+    long dialing = repo.sql().queryForObject(
+        "SELECT count(*) FROM scheduled_calls WHERE workspace_id=:ws AND lead_id=:lead"
+            + " AND status='DIALING'", params, Long.class);
+    if (dialing > 0)
+      throw ApiException.conflict("Wait for the lead's dialing calls to finish");
+    long openHandovers = repo.sql().queryForObject(
+        "SELECT count(*) FROM handover_records WHERE workspace_id=:ws AND lead_id=:lead"
+            + " AND status IN ('PENDING','ASSIGNED','ACCEPTED')", params, Long.class);
+    if (openHandovers > 0)
+      throw ApiException.conflict("Complete the lead's open handovers before removing it");
+    repo.sql().update(
+        "UPDATE scheduled_calls SET status='CANCELLED',updated_at=now()"
+            + " WHERE workspace_id=:ws AND lead_id=:lead AND status='SCHEDULED'", params);
+    repo.sql().update(
+        "UPDATE callbacks SET status='CANCELLED',updated_at=now()"
+            + " WHERE workspace_id=:ws AND lead_id=:lead AND status='SCHEDULED'", params);
+    repo.sql().update(
+        "UPDATE notifications SET status='CANCELLED',updated_at=now()"
+            + " WHERE workspace_id=:ws AND status='SCHEDULED'"
+            + " AND data->>'type'='CALLBACK_REMINDER' AND data->>'resourceId'=:resource",
+        Map.of("ws", ws, "resource", resource.toString()));
+    repo.sql().update(
+        "UPDATE voice_sessions SET deleted_at=now(),updated_at=now()"
+            + " WHERE workspace_id=:ws AND lead_id=:lead AND deleted_at IS NULL", params);
+    repo.sql().update(
+        "UPDATE leads SET deleted_at=now(),updated_at=now()"
+            + " WHERE workspace_id=:ws AND id=:lead AND deleted_at IS NULL", params);
+    event(ws, "LEAD_REMOVED", "LEAD", resource);
+  }
+
+  @Transactional
+  public void deleteCall(Long ws, Long resource) {
+    tenant.manage(ws);
+    repo.workspaceLock(ws);
+    var call = repo.get("voice_sessions", ws, resource);
+    if (!Set.of("COMPLETED", "FAILED", "NO_ANSWER", "CANCELLED")
+        .contains(String.valueOf(call.get("status"))))
+      throw ApiException.conflict("Wait for the conversation to finish before removing it");
+    repo.sql().update(
+        "UPDATE voice_sessions SET deleted_at=now(),updated_at=now()"
+            + " WHERE workspace_id=:ws AND id=:id AND deleted_at IS NULL",
+        Map.of("ws", ws, "id", resource));
+    event(ws, "CALL_REMOVED", "VOICE_SESSION", resource);
   }
 
   /** Leads that arrive from the website or a property portal get a first call within minutes. */
@@ -874,7 +938,7 @@ public class EstateService {
     var existing =
         repo.sql()
             .query(
-                "SELECT * FROM leads WHERE workspace_id=:ws AND"
+                "SELECT * FROM leads WHERE workspace_id=:ws AND deleted_at IS NULL AND"
                     + " right(regexp_replace(phone,'[^0-9]','','g'),10)=:tail ORDER BY id LIMIT 1",
                 Map.of("ws", ws, "tail", tail(phone)),
                 repo::row);
@@ -932,8 +996,6 @@ public class EstateService {
   public Map<String, Object> ingestCall(Long ws, Requests.CallIngest request, String key) {
     tenant.require(ws);
     repo.workspaceLock(ws);
-    var lead = repo.get("leads", ws, request.leadId());
-    if (request.projectId() != null) project(ws, request.projectId());
     if (key != null && (key.length() > 120 || !key.matches("[A-Za-z0-9_:.-]+")))
       throw ApiException.bad("Invalid Idempotency-Key");
     var prior =
@@ -947,6 +1009,10 @@ public class EstateService {
     Long uuid = prior.isEmpty() ? null : id(prior.getFirst().get("id"));
     if (uuid != null && !request.leadId().equals(id(prior.getFirst().get("leadId"))))
       throw ApiException.conflict("This call is already recorded against another lead");
+    if (uuid != null && prior.getFirst().get("deletedAt") != null)
+      return prior.getFirst(); // Idempotent provider retry must not restore a removed call.
+    var lead = repo.get("leads", ws, request.leadId());
+    if (request.projectId() != null) project(ws, request.projectId());
 
     // A row already carrying this callId means the agent's outbox is resending a record we have.
     // The session row is refreshed, but the append-only detail tables must not gain a duplicate.
@@ -1396,7 +1462,8 @@ public class EstateService {
     var followUps =
         repo.sql()
             .query(
-                "SELECT * FROM leads WHERE workspace_id=:ws AND data->>'followUpAt' IS NOT NULL AND"
+                "SELECT * FROM leads WHERE workspace_id=:ws AND deleted_at IS NULL"
+                    + " AND data->>'followUpAt' IS NOT NULL AND"
                     + " (data->>'followUpAt')::timestamptz>=now() ORDER BY"
                     + " (data->>'followUpAt')::timestamptz LIMIT 8",
                 Map.of("ws", ws),
@@ -1404,7 +1471,8 @@ public class EstateService {
     var conversion =
         repo.sql()
             .queryForList(
-                "SELECT status,count(*) AS count FROM leads WHERE workspace_id=:ws GROUP BY status"
+                "SELECT status,count(*) AS count FROM leads WHERE workspace_id=:ws"
+                    + " AND deleted_at IS NULL GROUP BY status"
                     + " ORDER BY status",
                 Map.of("ws", ws));
     boolean demo =
@@ -1473,6 +1541,8 @@ public class EstateService {
                 "SELECT count(*) FROM "
                     + table
                     + " WHERE workspace_id=:ws"
+                    + (Set.of("leads", "voice_sessions").contains(table)
+                        ? " AND deleted_at IS NULL" : "")
                     + (state == null ? "" : " AND status=:status"),
                 state == null ? Map.of("ws", ws) : Map.of("ws", ws, "status", state),
                 Long.class));

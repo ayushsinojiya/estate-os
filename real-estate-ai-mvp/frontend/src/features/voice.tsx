@@ -241,6 +241,7 @@ export function MarkDnc({ lead, children }: { lead: Entity; children?: ReactNode
 export function LeadCallbacks({ lead }: { lead: Entity }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [cancelCallback, setCancelCallback] = useState<Entity | null>(null);
   return (
     <section className="panel">
       <div className="panel-heading flex justify-between items-center">
@@ -262,14 +263,7 @@ export function LeadCallbacks({ lead }: { lead: Entity }) {
         ]}
         actions={(c) =>
           c.status === "SCHEDULED" ? (
-            <button
-              className="text-link"
-              onClick={async () => {
-                await write(`/callbacks/${c.id}/cancel`, {});
-                await queryClient.invalidateQueries();
-                toast("Callback cancelled");
-              }}
-            >
+            <button className="text-link" onClick={() => setCancelCallback(c)}>
               Cancel
             </button>
           ) : null
@@ -303,6 +297,25 @@ export function LeadCallbacks({ lead }: { lead: Entity }) {
               await queryClient.invalidateQueries();
               setOpen(false);
               toast("Callback scheduled; calls outside 09:00–21:00 IST move to the next morning");
+            }}
+          />
+        </Modal>
+      )}
+      {cancelCallback && (
+        <Modal title="Cancel callback?" onClose={() => setCancelCallback(null)}>
+          <p className="text-muted mb-5">
+            The callback due {date(cancelCallback.dueAt)} will no longer be scheduled.
+          </p>
+          <RecordForm
+            fields={[]}
+            submitLabel="Confirm cancellation"
+            danger
+            onCancel={() => setCancelCallback(null)}
+            onSubmit={async () => {
+              await write(`/callbacks/${cancelCallback.id}/cancel`, {});
+              await queryClient.invalidateQueries();
+              setCancelCallback(null);
+              toast("Callback cancelled");
             }}
           />
         </Modal>

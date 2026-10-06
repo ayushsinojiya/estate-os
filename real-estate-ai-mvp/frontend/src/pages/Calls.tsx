@@ -1,5 +1,7 @@
-import { Link, useParams } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
+import { useAuth } from "../hooks/useAuth";
 import { useList } from "../hooks/useList";
 import {
   Async,
@@ -7,9 +9,14 @@ import {
   DataTable,
   Details,
   Filters,
+  Modal,
   PageHeader,
   Pagination,
+  RecordForm,
+  useToast,
 } from "../components/ui";
+import { write } from "../api/client";
+import { queryClient } from "../services/query";
 import { date, label, list } from "../utils/format";
 import { CallOutcome } from "../features/voice";
 export function Calls() {
@@ -33,6 +40,7 @@ export function Calls() {
         />
         <Async query={l.query}>
           <DataTable
+            dateFilter={false}
             data={list(l.query.data)}
             columns={[
               {
@@ -105,6 +113,10 @@ export function RichContent({ value }: { value: any }) {
 export function CallDetail() {
   const { id } = useParams();
   const q = useApi(`/calls/${id}`);
+  const { canManage } = useAuth();
+  const [remove, setRemove] = useState(false);
+  const navigate = useNavigate();
+  const toast = useToast();
   const d = q.data || {};
   return (
     <>
@@ -112,6 +124,9 @@ export function CallDetail() {
         title="Conversation details"
         back="/calls"
         description={date(d.createdAt)}
+        action={canManage && q.data && ["COMPLETED", "FAILED", "NO_ANSWER", "CANCELLED"].includes(String(d.status)) ? (
+          <button className="btn-danger" onClick={() => setRemove(true)}>Remove conversation</button>
+        ) : undefined}
       />
       <Async query={q}>
         {d.mock && (
@@ -144,8 +159,10 @@ export function CallDetail() {
             </section>
             <CallOutcome call={d} />
             <section className="panel p-6">
-              <h2 className="mb-5">Transcript</h2>
-              <RichContent value={d.transcript} />
+              <h2 className="mb-5" id="transcript-heading">Transcript</h2>
+              <div className="transcript-scroll" role="region" aria-labelledby="transcript-heading" tabIndex={0}>
+                <RichContent value={d.transcript} />
+              </div>
             </section>
           </div>
           <section className="panel p-6 h-fit">
@@ -165,6 +182,26 @@ export function CallDetail() {
           </section>
         </div>
       </Async>
+      {remove && (
+        <Modal title="Remove conversation?" onClose={() => setRemove(false)}>
+          <p className="text-muted mb-5">
+            This conversation will be hidden from the app. Its audit history is kept.
+          </p>
+          <RecordForm
+            fields={[]}
+            submitLabel="Confirm removal"
+            danger
+            onCancel={() => setRemove(false)}
+            onSubmit={async () => {
+              await write(`/calls/${id}`, null, "DELETE");
+              await queryClient.invalidateQueries();
+              setRemove(false);
+              toast("Conversation removed");
+              navigate("/calls");
+            }}
+          />
+        </Modal>
+      )}
     </>
   );
 }
