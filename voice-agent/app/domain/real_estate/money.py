@@ -44,9 +44,6 @@ _PATTERNS = [
      lambda m: float(m.group(1).replace(",", ""))),
     (re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:rupees|रुपये|रुपए|रुपया|रुपयांना|રૂપિયા)", re.I),
      lambda m: float(m.group(1).replace(",", ""))),
-    # Indian digit grouping is money even without a unit: speech recognition writes "1 करोड़" as
-    # "1,00,00,000" and "85 लाख" as "85,00,000".
-    (re.compile(r"(?<![\d,.])(\d{1,2}(?:,\d{2})+,\d{3})(?![\d,])"), lambda m: float(m.group(1).replace(",", ""))),
 ]
 
 

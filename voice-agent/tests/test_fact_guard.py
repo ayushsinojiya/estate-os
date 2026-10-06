@@ -53,9 +53,3 @@ def test_numbers_written_as_words_are_checked_like_digits():
     assert guard.unsupported("दो BHK साठ लाख में मिलेगा।") == [6000000]
     assert guard.unsupported("carpet area सोलह सौ पचास sq ft है।") == [1650]
 
-
-def test_a_budget_written_in_indian_digit_groups_may_be_read_back():
-    # Gnani's speech recognition writes "1 करोड़" as "1,00,00,000".
-    guard = PriceGuard()
-    guard.add_caller_text("हाँ मेरा बजट 1,00,00,000 है")
-    assert guard.unsupported("ठीक है, 1 crore का budget है।") == []
