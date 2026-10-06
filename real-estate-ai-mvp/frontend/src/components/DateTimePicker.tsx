@@ -129,7 +129,7 @@ export function DateTimePicker({
       window.visualViewport?.removeEventListener("resize", positionMenu);
       window.visualViewport?.removeEventListener("scroll", positionMenu);
     };
-  }, [open, visibleMonth]);
+  }, [open, visibleMonth, calendarView]);
 
   function setDate(date: Date) {
     onChange(dateOnly ? localValue(date, hour, minute).slice(0, 10) : localValue(date, hour, minute));

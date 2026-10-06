@@ -15,6 +15,7 @@ import hmac
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
@@ -341,13 +342,19 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
 
     @app.get("/v1/workspaces/{ws}/sources", dependencies=[Depends(crm)])
     async def list_sources(ws: int, request: Request, page: int = 0, size: int = 20, search: str = "",
-                           status: str = "", projectId: str | None = None) -> dict:
+                           status: str = "", projectId: str | None = None,
+                           dateFrom: datetime | None = None, dateTo: datetime | None = None) -> dict:
         if page < 0 or not 1 <= size <= 100:
             raise HTTPException(422, "invalid pagination")
+        if (dateFrom and dateFrom.tzinfo is None) or (dateTo and dateTo.tzinfo is None):
+            raise HTTPException(422, "date filters must include a timezone")
+        if dateFrom and dateTo and dateFrom >= dateTo:
+            raise HTTPException(422, "dateFrom must be before dateTo")
         svc = svc_dep(request)
         project = _int_id(projectId, "projectId") if projectId else None
         result = await svc.store.list_sources(ws, page=page, size=size, search=search[:200],
-                                              status=status[:30], project_id=project)
+                                              status=status[:30], project_id=project,
+                                              date_from=dateFrom, date_to=dateTo)
         return {**result, "items": [source_json(d, threshold=settings.low_confidence_threshold)
                                     for d in result["items"]]}
 

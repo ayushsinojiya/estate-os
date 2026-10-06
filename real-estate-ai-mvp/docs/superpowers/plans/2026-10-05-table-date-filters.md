@@ -33,8 +33,8 @@
 
 **Interfaces:** `DateRangeFilter({from,to,onFrom,onTo})`; `dateBounds(from,to)` returns ISO UTC boundaries; `DataTable` accepts `dateFilter?: boolean` (default true) and filters date-bearing rows when true.
 
-- [ ] Write tests for local date inclusion, clear, no-date table, and date-only calendar; run and observe failure.
-- [ ] Implement controls and filtering; run focused tests green.
+- [x] Write tests for local date inclusion, clear, no-date table, and date-only calendar; run and observe failure.
+- [x] Implement controls and filtering; run focused tests green.
 
 ### Task 2: Paginated CRM and managed-file lists
 
@@ -42,8 +42,8 @@
 
 **Interfaces:** `dateFrom` and `dateTo` query parameters are UTC instants, lower-inclusive and upper-exclusive. `useList` owns local-date state, resets page, and supplies `Filters` props.
 
-- [ ] Write frontend and backend tests for filtering, date bounds, count, and page reset; run and observe failure.
-- [ ] Implement backend predicates and frontend query controls, including visit scheduled date; run focused tests green.
+- [x] Write frontend and backend tests for filtering, date bounds, count, and page reset; run and observe failure.
+- [x] Implement backend predicates and frontend query controls, including visit scheduled date; run focused tests green.
 
 ### Task 3: Knowledge-source list and full verification
 
@@ -51,6 +51,6 @@
 
 **Interfaces:** Same `dateFrom`/`dateTo` UTC-instants contract as Task 2.
 
-- [ ] Write tests for RAG source list filtering; run and observe failure.
-- [ ] Forward and apply filters, then run focused tests green.
-- [ ] Run complete frontend/backend/RAG test suites, lint, build, and browser verification at desktop and mobile widths.
+- [x] Write tests for RAG source list filtering; run and observe failure.
+- [x] Forward and apply filters, then run focused tests green.
+- [x] Run complete frontend/backend/RAG test suites, lint, build, and browser verification at desktop and mobile widths.

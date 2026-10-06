@@ -198,7 +198,7 @@ export function SiteVisits() {
             </div>
           ) : (
             <DataTable
-            dateFilter={false}
+              dateFilter={false}
               data={list(l.query.data)}
               columns={[
                 {

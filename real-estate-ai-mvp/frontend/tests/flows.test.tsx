@@ -549,7 +549,8 @@ describe("form validation", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Select date and time" }));
-    expect(screen.getByText("October 2030")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Choose month" })).toHaveTextContent("October");
+    expect(screen.getByRole("button", { name: "Choose year" })).toHaveTextContent("2030");
     await user.click(screen.getByRole("button", { name: "15 October 2030" }));
 
     expect(onChange).toHaveBeenCalledWith("2030-10-15T10:00");

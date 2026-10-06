@@ -48,7 +48,7 @@ class RagIngestionServiceTest {
 
   @Test
   void forwardsDateRangeToKnowledgeService() {
-    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources?page=0&size=20&search=&status=&dateFrom=2020-01-05T00%3A00%3A00Z&dateTo=2020-01-06T00%3A00%3A00Z"))
+    server.expect(requestTo("http://ingestion.test/v1/workspaces/7/sources?page=0&size=20&search=&status=&dateFrom=2020-01-05T00:00:00Z&dateTo=2020-01-06T00:00:00Z"))
         .andRespond(withSuccess("{\"items\":[],\"total\":0}", MediaType.APPLICATION_JSON));
     assertEquals(0, ingestion.list(7L, 0, 20, "", "", "2020-01-05T00:00:00Z", "2020-01-06T00:00:00Z").get("total").asInt());
     server.verify();

@@ -826,10 +826,10 @@ class ApiIntegrationTest {
     assertEquals(1, filtered.get("total").asInt());
     assertEquals(first.get("id").asText(), filtered.get("items").get(0).get("id").asText());
 
-    var visit = send("POST", "/site-visits", visitBody(first.get("id").asText(), Instant.now().plusSeconds(10 * 24 * 3600)), token, ws, 201);
-    db.update("UPDATE appointments SET scheduled_at='2020-01-05T12:00:00Z', created_at='2020-01-04T12:00:00Z' WHERE id=?", visit.get("id").asLong());
+    Long visitId = db.queryForObject("INSERT INTO appointments(workspace_id,project_id,lead_id,agent_id,scheduled_at,duration_minutes,status,created_at) VALUES (?,?,?,?,'2020-01-05T12:00:00Z',60,'CONFIRMED','2020-01-04T12:00:00Z') RETURNING id", Long.class,
+        Long.valueOf(ws), Long.valueOf(projectId), first.get("id").asLong(), Long.valueOf(agentId));
     var visits = send("GET", "/site-visits?dateFrom=2020-01-05T00:00:00Z&dateTo=2020-01-06T00:00:00Z", null, token, ws, 200);
-    assertTrue(visits.get("items").toString().contains(visit.get("id").asText()));
+    assertTrue(visits.get("items").toString().contains(visitId.toString()));
     send("GET", "/leads?dateFrom=not-a-date", null, token, ws, 400);
   }
 
