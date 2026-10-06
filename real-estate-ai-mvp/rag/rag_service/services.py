@@ -9,7 +9,7 @@ import httpx
 from rag_service.config import Settings
 from rag_service.db import Database
 from rag_service.providers.embeddings import Embedder, HashingEmbedder, OpenAIEmbedder
-from rag_service.providers.llm import ChatJsonModel, JsonModel, MistralOCRParser, OpenAIJsonModel, OpenAIVisionParser, PageParser
+from rag_service.providers.llm import JsonModel, MistralOCRParser, OpenAIJsonModel, OpenAIVisionParser, PageParser
 from rag_service.storage import FileStore
 from rag_service.store import Store
 
@@ -24,7 +24,6 @@ class Services:
     parser: PageParser | None
     json_model: JsonModel | None
     http: httpx.AsyncClient
-    extraction_model: ChatJsonModel | None = None
 
 
 def build_services(settings: Settings) -> Services:
@@ -49,7 +48,5 @@ def build_services(settings: Settings) -> Services:
     elif live and settings.openai_api_key:
         parser = OpenAIVisionParser(settings.openai_api_key, settings.parser_model, settings.openai_base_url,
                                     settings.parse_max_retries, http)
-    extraction = (ChatJsonModel(settings.groq_api_key, settings.extraction_model, settings.extraction_base_url, http)
-                  if live and settings.groq_api_key else None)
     return Services(settings, db, Store(db, settings.low_confidence_threshold),
-                    FileStore(settings.rag_storage_path), embedder, parser, json_model, http, extraction)
+                    FileStore(settings.rag_storage_path), embedder, parser, json_model, http)

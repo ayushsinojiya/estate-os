@@ -12,19 +12,10 @@ import org.springframework.stereotype.Service;
  *
  * <p>These run while a customer is waiting on the phone, so each one is a single query returning
  * exactly what the agent speaks: no N+1 fan-out, no fields the agent discards. Only ACTIVE
- * projects and AVAILABLE units for sale (not rent) are ever returned — the agent must never quote something sold.
+ * projects and AVAILABLE units are ever returned — the agent must never quote something sold.
  */
 @Service
 public class VoiceCatalogService {
-  /**
-   * The voice agent sells homes by bedroom count: offices, shops, warehouses, industrial and farm land,
-   * and homes whose files do not state the bedrooms (imported listings), stay in the CRM but are never
-   * offered on a call.
-   */
-  static final String HOMES_ONLY =
-      "property_type !~* '(commercial|office|co-?working|shop|showroom|warehouse|industrial|restaurant|hostel|agricultur|farm)'"
-          + " AND bhk > 0";
-
   private final NamedParameterJdbcTemplate db;
   private final TenantContext tenant;
 
@@ -64,7 +55,7 @@ public class VoiceCatalogService {
     db.query(
         "SELECT project_id, bhk, min(area) AS carpet_area, min(price) AS price_min,"
             + " max(price) AS price_max, count(*) AS available"
-            + " FROM units WHERE workspace_id=:ws AND status='AVAILABLE' AND transaction_type='SALE' AND " + HOMES_ONLY
+            + " FROM units WHERE workspace_id=:ws AND status='AVAILABLE'"
             + " GROUP BY project_id, bhk ORDER BY project_id, bhk",
         Map.of("ws", ws),
         rs -> {
@@ -161,7 +152,7 @@ public class VoiceCatalogService {
         "unitTypes",
         db.query(
             "SELECT bhk, min(area) AS carpet_area FROM units"
-                + " WHERE workspace_id=:ws AND project_id=:id AND status='AVAILABLE' AND transaction_type='SALE' AND " + HOMES_ONLY
+                + " WHERE workspace_id=:ws AND project_id=:id AND status='AVAILABLE'"
                 + " GROUP BY bhk ORDER BY bhk",
             Map.of("ws", ws, "id", projectId),
             (rs, n) ->
@@ -182,7 +173,7 @@ public class VoiceCatalogService {
 
     StringBuilder where =
         new StringBuilder(
-            " WHERE u.workspace_id=:ws AND u.status='AVAILABLE' AND u.transaction_type='SALE' AND " + HOMES_ONLY.replace("property_type", "u.property_type").replace("bhk", "u.bhk") + " AND p.status='ACTIVE'");
+            " WHERE u.workspace_id=:ws AND u.status='AVAILABLE' AND p.status='ACTIVE'");
     Map<String, Object> params = new HashMap<>();
     params.put("ws", ws);
     if (bhk != null && !bhk.isEmpty()) {
@@ -250,7 +241,7 @@ public class VoiceCatalogService {
     Long units =
         db.queryForObject(
             "SELECT count(*) FROM units WHERE workspace_id=:ws AND project_id=:id"
-                + " AND status='AVAILABLE' AND transaction_type='SALE' AND " + HOMES_ONLY
+                + " AND status='AVAILABLE'"
                 + filter,
             params,
             Long.class);
@@ -269,7 +260,7 @@ public class VoiceCatalogService {
         db.query(
             "SELECT min(price) AS price_min, max(price) AS price_max, count(*) AS available"
                 + " FROM units WHERE workspace_id=:ws AND project_id=:id AND bhk=:bhk"
-                + " AND status='AVAILABLE' AND transaction_type='SALE' AND " + HOMES_ONLY,
+                + " AND status='AVAILABLE'",
             Map.of("ws", ws, "id", projectId, "bhk", bhk.intValue()),
             (rs, n) -> {
               Map<String, Object> row = new LinkedHashMap<>();

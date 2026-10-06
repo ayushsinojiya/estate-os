@@ -7,24 +7,10 @@ import logging
 import os
 import socket
 
-from rag_service.extract import extract
 from rag_service.ingest.pipeline import PermanentIngestError, ingest
 from rag_service.services import Services
 
 log = logging.getLogger(__name__)
-
-
-async def run_extraction(services: Services, document_id: int) -> None:
-    """Projects and listings in a published document, for the CRM's Projects & inventory."""
-    doc = await services.store.document(document_id)
-    if doc is None or doc["status"] != "PUBLISHED":
-        return  # replaced or withdrawn meanwhile: the CRM reads the current version instead
-    result = await extract(await services.store.pages_of(document_id), doc["file_name"],
-                           services.extraction_model)
-    await services.store.save_extraction(document_id, result)
-    log.info("document %s (%s v%s): extracted %d project(s), %d listing(s) with %d model call(s)",
-             document_id, doc["file_name"], doc["version"], len(result["projects"]), len(result["listings"]),
-             result["modelCalls"])
 
 
 async def run_once(services: Services, worker: str) -> bool:
@@ -33,16 +19,6 @@ async def run_once(services: Services, worker: str) -> bool:
     job = await store.claim_job(worker)
     if job is None:
         return False
-    if job["kind"] == "EXTRACT":
-        try:
-            await run_extraction(services, job["document_id"])
-        except Exception as exc:  # noqa: BLE001 - e.g. rate limited: back off and retry
-            log.exception("extraction of document %s failed (attempt %d)", job["document_id"], job["attempts"])
-            if await store.fail_job(job, repr(exc), services.settings.job_backoff_s):
-                await store.save_extraction(job["document_id"], None, f"gave up: {exc!r}")
-        else:
-            await store.finish_job(job["id"])
-        return True
     try:
         await ingest(services, job["document_id"])
     except PermanentIngestError as exc:

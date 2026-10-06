@@ -345,22 +345,10 @@ export function Units() {
                 render: (u) => <strong>{u.unitNumber}</strong>,
               },
               { key: "propertyType", label: "Type" },
-              {
-                key: "transactionType",
-                label: "For",
-                render: (u) => (u.transactionType === "RENT" ? "Rent" : "Sale"),
-              },
               { key: "bhk", label: "BHK" },
               { key: "area", label: "Area", render: (u) => `${u.area} sq ft` },
               { key: "floor", label: "Floor" },
-              {
-                key: "price",
-                label: "Price",
-                render: (u) =>
-                  u.transactionType === "RENT"
-                    ? `${money(u.price)} / month`
-                    : money(u.price),
-              },
+              { key: "price", label: "Price", render: (u) => money(u.price) },
               {
                 key: "status",
                 label: "Availability",
@@ -393,13 +381,8 @@ export function Units() {
               list(b.data),
               list(floors.data),
               list(types.data),
-              edit?.propertyType,
             )}
-            initial={
-              edit
-                ? { transactionType: "SALE", ...edit }
-                : { status: "AVAILABLE", propertyType: "APARTMENT", transactionType: "SALE" }
-            }
+            initial={edit || { status: "AVAILABLE", propertyType: "APARTMENT" }}
             onCancel={() => setEdit(undefined)}
             onSubmit={async (data) => {
               await write(

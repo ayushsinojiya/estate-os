@@ -44,13 +44,6 @@ public final class RestRagServiceClient implements RagServiceClient {
         result.put("mock", false);
         return result;
     }
-    public Map<String, Object> listSources(Long workspaceId, int page, int size) {
-        return http.get("/v1/workspaces/" + workspaceId + "/sources?page=" + page + "&size=" + size);
-    }
-    public Map<String, Object> getExtraction(Long workspaceId, String sourceId, boolean retry) {
-        return http.get("/v1/workspaces/" + workspaceId + "/sources/" + java.util.UUID.fromString(sourceId)
-            + "/extraction" + (retry ? "?retry=true" : ""));
-    }
     public Map<String, Object> deleteSource(Map<String, Object> request) {
         String workspace = IntegrationPayloads.id(request, "workspaceId");
         Map<String, Object> result = new LinkedHashMap<>(

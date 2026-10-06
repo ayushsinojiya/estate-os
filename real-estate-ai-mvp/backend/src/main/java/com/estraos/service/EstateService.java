@@ -249,9 +249,7 @@ public class EstateService {
                 "bhk",
                 request.bhk(),
                 "property_type",
-                request.propertyType().toUpperCase(Locale.ROOT),
-                "transaction_type",
-                status(request.transactionType() == null ? null : request.transactionType().toUpperCase(Locale.ROOT), "SALE", "SALE", "RENT")));
+                request.propertyType().toUpperCase(Locale.ROOT)));
     Long uuid = id(saved.get("id"));
     if (old == null || !old.get("status").equals(state))
       repo.event(
@@ -720,20 +718,16 @@ public class EstateService {
               "bhk",
               "areaMin",
               "areaMax",
-              "language",
-              "intent")) if (p.get(key) == null) p.put(key, lead.get(key));
+              "language")) if (p.get(key) == null) p.put(key, lead.get(key));
     }
     if (request.projectId() != null) project(ws, request.projectId());
     ranges(decimal(p.get("budgetMin")), decimal(p.get("budgetMax")), "Budget");
     ranges(decimal(p.get("areaMin")), decimal(p.get("areaMax")), "Area");
     StringBuilder where =
         new StringBuilder(
-            " WHERE u.workspace_id=:ws AND u.status='AVAILABLE' AND p.status='ACTIVE'"
-                + " AND u.transaction_type=:transaction");
+            " WHERE u.workspace_id=:ws AND u.status='AVAILABLE' AND p.status='ACTIVE'");
     Map<String, Object> params = new HashMap<>();
     params.put("ws", ws);
-    // A lead looking to rent is shown rent units (price per month); everyone else, units for sale.
-    params.put("transaction", "RENT".equalsIgnoreCase(string(p, "intent", "")) ? "RENT" : "SALE");
     for (String[] filter :
         new String[][] {
           {"budgetMin", "u.price>=:budgetMin"},

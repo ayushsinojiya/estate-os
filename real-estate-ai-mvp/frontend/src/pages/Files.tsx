@@ -14,8 +14,6 @@ const supported = ".pdf,.docx,.pptx,.xls,.xlsx,.csv,.txt,.md,.jpg,.jpeg,.png,.we
 const supportedExtensions = new Set(supported.split(",").map((extension) => extension.slice(1)));
 const isWorking = (source: Entity) => ["UPLOADED", "PARSING", "EMBEDDING"].includes(source.status);
 type Outcome = { id?: string; filename: string; status: string; reason?: string };
-/** What a file added to Projects & inventory (see KnowledgeInventoryImport on the CRM). */
-type InventoryImport = { sourceId: string; status: string; projects: number; units: number; message?: string };
 type SourceDetails = Entity & {
   versions?: { version: number; status: string; createdAt: string }[];
   pages?: { page: number; provider: string; confidence: number }[];
@@ -52,22 +50,7 @@ function WorkspaceFiles() {
     queryKey: [workspaceId, path], queryFn: () => api<Page>(path), enabled: tab === "sources" && !!workspaceId,
     refetchInterval: (result) => result.state.data?.items.some(isWorking) ? 2000 : false,
   });
-  const imports = useQuery<{ items: InventoryImport[] }>({
-    queryKey: [workspaceId, "/knowledge/imports"], queryFn: () => api("/knowledge/imports"), enabled: tab === "sources" && !!workspaceId,
-    refetchInterval: (result) => (Array.isArray(result.state.data?.items) && result.state.data.items.some((i) => i.status === "PENDING")) ? 5000 : false,
-  });
-  const importBySource = new Map((Array.isArray(imports.data?.items) ? imports.data.items : []).map((i) => [i.sourceId, i]));
   const refresh = () => queryClient.invalidateQueries({ queryKey: [workspaceId] });
-
-  async function syncInventory() {
-    setBusy(true); setError(null);
-    try {
-      await api("/knowledge/imports/sync", { method: "POST" });
-      await refresh();
-      toast("Projects & inventory are up to date with these files");
-    } catch (nextError) { setError(nextError); }
-    finally { setBusy(false); }
-  }
 
   async function choose(files: FileList | null, replacing?: Entity) {
     const values = Array.from(files || []);
@@ -124,8 +107,6 @@ function WorkspaceFiles() {
       <section className="panel p-5 space-y-3 min-w-0">
         <h2 className="text-lg font-semibold">Property knowledge</h2>
         <p className="text-muted">PDF, Word, PowerPoint, Excel, CSV, text, Markdown and images (JPG, PNG, WEBP). Maximum 50 MB per file. Files are parsed, indexed and published automatically; a replacement goes live only once it is fully indexed. These are workspace-wide sources — documents for one project belong on that project's Documents tab.</p>
-        <p className="text-muted">Projects and properties with a price in these files are also added to Projects &amp; inventory, within a few minutes of publishing. Replacing a file updates them; deleting it takes its units off the market.</p>
-        {canManage && <button className="btn-secondary" disabled={busy} onClick={() => void syncInventory()}><RefreshCw size={17}/> Sync inventory now</button>}
         {!canManage && <p className="text-muted">An administrator or manager can upload, replace, retry, or delete sources.</p>}
         {busy && <p role="status">Submitting your request…</p>}
         {outcomes.length > 0 && <div className="space-y-2" aria-live="polite">
@@ -142,13 +123,6 @@ function WorkspaceFiles() {
           { key: "sizeBytes", label: "Size", render: (source) => bytes(source.sizeBytes) },
           { key: "status", label: "Status", render: (source) => <><Badge value={source.status}/>{source.lowConfidencePageCount > 0 && <span className="ml-1"><Badge value="CHECK_PAGES"/></span>}{source.error && <p className="text-muted whitespace-normal break-words max-w-xs mt-1">{source.error}</p>}</> },
           { key: "docType", label: "Type", render: (source) => label(source.docType) },
-          { key: "inventory", label: "Inventory", render: (source) => {
-            if (source.crmDocumentId) return <span className="text-muted">Project document</span>;
-            const item = importBySource.get(source.id);
-            if (!item) return <span className="text-muted">{source.status === "PUBLISHED" ? "Waiting" : "—"}</span>;
-            if (item.status === "IMPORTED") return <span>{item.projects} project{item.projects === 1 ? "" : "s"} · {item.units} unit{item.units === 1 ? "" : "s"}</span>;
-            return <span className="whitespace-normal break-words max-w-xs inline-block"><Badge value={item.status}/>{item.message && <span className="text-muted block mt-1">{item.message}</span>}</span>;
-          } },
           { key: "version", label: "Version", render: (source) => <span>v{source.version}{source.status === "PUBLISHED" ? " · live" : ""}</span> },
           { key: "createdAt", label: "Uploaded", render: (source) => date(source.createdAt) },
         ]} actions={(source) => <div className="flex gap-1">

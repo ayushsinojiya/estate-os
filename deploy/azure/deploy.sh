@@ -210,7 +210,7 @@ deploy_rag() {
   log "Deploying knowledge service (API + worker)"
   ENV_ID="$(az containerapp env show -n "$ENVIRONMENT" -g "$ENV_RG" --query id -o tsv)"
   export RAG_STORAGE_NAME
-  export ENV_ID ACR_SERVER ACR_USER ACR_PASS TAG LOCATION RAG_SERVICE_TOKEN RAG_VOICE_TOKEN OPENAI_API_KEY GROQ_API_KEY
+  export ENV_ID ACR_SERVER ACR_USER ACR_PASS TAG LOCATION RAG_SERVICE_TOKEN RAG_VOICE_TOKEN OPENAI_API_KEY
   export RAG_VOICE_WORKSPACE_ID="${SERVICE_ACCOUNT_WORKSPACE_ID:-1}"
   export RAG_DATABASE_URL="postgresql://${POSTGRES_ADMIN_USER}:${POSTGRES_ADMIN_PASSWORD}@${PG}.postgres.database.azure.com:5432/estraos_knowledge?sslmode=require"
   local role app yaml

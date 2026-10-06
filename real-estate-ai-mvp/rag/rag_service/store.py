@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -315,40 +314,6 @@ class Store:
                     FROM kb_documents d WHERE {clause} ORDER BY d.created_at DESC, d.id DESC
                     LIMIT %s OFFSET %s""", [self.low_confidence_threshold] + params + [size, page * size])).fetchall()
         return {"items": items, "total": total, "page": page, "size": size}
-
-    # ---------------------------------------------------------------- extraction
-
-    async def published_version(self, workspace_id: int, source_id: uuid.UUID) -> dict[str, Any] | None:
-        """The version the knowledge base answers from (a newer one may still be processing)."""
-        async with self.db.conn() as conn:
-            return await (await conn.execute(
-                "SELECT * FROM kb_documents WHERE workspace_id=%s AND source_id=%s AND status='PUBLISHED'"
-                " ORDER BY version DESC LIMIT 1", (workspace_id, source_id))).fetchone()
-
-    async def queue_extraction(self, document: dict[str, Any]) -> None:
-        async with self.db.tx() as conn:
-            await conn.execute("UPDATE kb_documents SET extraction_status='QUEUED', extraction_error=NULL,"
-                               " updated_at=now() WHERE id=%s", (document["id"],))
-            await conn.execute(
-                "INSERT INTO kb_jobs(workspace_id, document_id, kind) VALUES (%s,%s,'EXTRACT')"
-                " ON CONFLICT (document_id, kind) WHERE status IN ('QUEUED','RUNNING') DO NOTHING",
-                (document["workspace_id"], document["id"]))
-
-    async def pages_of(self, document_id: int) -> list[tuple[int, str]]:
-        async with self.db.conn() as conn:
-            rows = await (await conn.execute(
-                "SELECT page_no, markdown FROM kb_pages WHERE document_id=%s ORDER BY page_no",
-                (document_id,))).fetchall()
-        return [(r["page_no"], r["markdown"]) for r in rows]
-
-    async def save_extraction(self, document_id: int, result: dict[str, Any] | None,
-                              error: str | None = None) -> None:
-        async with self.db.conn() as conn:
-            await conn.execute(
-                "UPDATE kb_documents SET extraction=%s::jsonb, extraction_status=%s, extraction_error=%s,"
-                " updated_at=now() WHERE id=%s",
-                (None if result is None else json.dumps(result, ensure_ascii=False),
-                 "FAILED" if error else "DONE", error and error[:500], document_id))
 
     # ---------------------------------------------------------------- jobs
 

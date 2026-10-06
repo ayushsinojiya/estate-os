@@ -117,32 +117,6 @@ class JsonModel(Protocol):
                             schema: dict[str, Any]) -> dict[str, Any]: ...
 
 
-class ChatJsonModel:
-    """Any OpenAI-compatible chat API in JSON mode; Groq by default (structured extraction)."""
-
-    def __init__(self, api_key: str, model: str, base_url: str, client: httpx.AsyncClient | None = None,
-                 timeout_s: float = 90.0, retries: int = 8, max_tokens: int = 8192):
-        self.name = model
-        self.model = model
-        self.timeout_s = timeout_s
-        self.retries = retries
-        self.max_tokens = max_tokens
-        self._url = base_url.rstrip("/") + "/chat/completions"
-        self._headers = {"Authorization": f"Bearer {api_key}"}
-        self._client = client or httpx.AsyncClient()
-
-    async def complete(self, system: str, user: str) -> dict[str, Any]:
-        payload = {"model": self.model, "temperature": 0, "max_tokens": self.max_tokens,
-                   "response_format": {"type": "json_object"},
-                   "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
-        data = await post_json(self._client, self._url, headers=self._headers, payload=payload,
-                               retries=self.retries, timeout_s=self.timeout_s)
-        text = data["choices"][0]["message"]["content"] or "{}"
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-        value = json.loads(text)
-        return value if isinstance(value, dict) else {}
-
-
 class OpenAIJsonModel:
     def __init__(self, api_key: str, model: str, base_url: str, client: httpx.AsyncClient | None = None,
                  timeout_s: float = 20.0, retries: int = 2):

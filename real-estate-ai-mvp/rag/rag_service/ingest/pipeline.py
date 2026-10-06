@@ -77,8 +77,6 @@ async def ingest(services: Services, document_id: int) -> str:
     await store.set_status(document_id, "EMBEDDING", expect=("EMBEDDING",), embed_tokens=result.tokens,
                            cost_usd=cost, embedding_model=services.embedder.model)
     published = await store.publish(document_id)
-    if published:
-        await store.queue_extraction(doc)
     log.info("document %s (%s v%s): %d pages, %d chunks, %s", document_id, doc["file_name"], doc["version"],
              len(pages), len(chunks), "published" if published else "not published (superseded or withdrawn)")
     return "PUBLISHED" if published else "SKIPPED"

@@ -151,26 +151,13 @@ export function unitFields(
   buildings: Entity[],
   floors: Entity[] = [],
   types: Entity[] = [],
-  currentType?: string,
 ): Field[] {
-  // Units imported from File management carry the file's own type ("1 RK Apartment"); keep it selectable.
-  const propertyTypes = ["APARTMENT", "VILLA", "PLOT", "COMMERCIAL"];
-  if (currentType && !propertyTypes.includes(currentType)) propertyTypes.push(currentType);
   return [
-    {
-      name: "transactionType",
-      label: "Listed for",
-      required: true,
-      options: [
-        { value: "SALE", label: "Sale" },
-        { value: "RENT", label: "Rent" },
-      ],
-    },
     {
       name: "buildingId",
       label: "Building / tower",
+      required: true,
       options: entityOptions(buildings),
-      hint: "Optional. Listings imported from files have no building.",
     },
     { name: "unitNumber", label: "Unit number", required: true },
     {
@@ -193,7 +180,7 @@ export function unitFields(
       name: "propertyType",
       label: "Property type",
       required: true,
-      options: options(propertyTypes),
+      options: options(["APARTMENT", "VILLA", "PLOT", "COMMERCIAL"]),
     },
     {
       name: "bhk",
@@ -236,7 +223,6 @@ export function unitFields(
       type: "number",
       required: true,
       min: 1,
-      hint: "For a rent listing, the rent per month.",
     },
     {
       name: "status",

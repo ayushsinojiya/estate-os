@@ -20,15 +20,12 @@ SECRETS = {
     "service-token": "RAG_SERVICE_TOKEN",
     "voice-token": "RAG_VOICE_TOKEN",
     "openai-key": "OPENAI_API_KEY",
-    "groq-key": "GROQ_API_KEY",
 }
 SECRET_ENV = {
     "RAG_DATABASE_URL": "database-url",
     "RAG_SERVICE_TOKEN": "service-token",
     "RAG_VOICE_TOKEN": "voice-token",
     "OPENAI_API_KEY": "openai-key",
-    # Reads projects and listings out of uploaded files for Projects & inventory.
-    "GROQ_API_KEY": "groq-key",
 }
 PLAIN = {
     "PROVIDER_MODE": "live",
@@ -43,7 +40,6 @@ PLAIN = {
     "VOICE_EMBED_BUDGET_MS": "300",
     "REWRITE_ON_VOICE": "false",
     "RAG_STORAGE_PATH": "/data/sources",
-    "EXTRACTION_MODEL": "openai/gpt-oss-120b",
 }
 
 
