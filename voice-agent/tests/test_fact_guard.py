@@ -53,3 +53,11 @@ def test_numbers_written_as_words_are_checked_like_digits():
     assert guard.unsupported("दो BHK साठ लाख में मिलेगा।") == [6000000]
     assert guard.unsupported("carpet area सोलह सौ पचास sq ft है।") == [1650]
 
+
+
+def test_a_budget_with_the_single_character_nukta_may_be_read_back():
+    # Sarvam writes "करोड़" with U+095C; the patterns use ड + nukta. Both must count.
+    guard = PriceGuard()
+    guard.add_caller_text("1 करोड़ के आस पास")
+    assert guard.unsupported("समझ गई, 1 crore के आसपास।") == []
+    assert guard.unsupported("आपके 1 करोड़ के बजट में 3 ऑप्शन्स हैं।") == []

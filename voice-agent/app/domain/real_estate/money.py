@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 _DEV_DIGITS = str.maketrans("०१२३४५६७८९૦૧૨૩૪૫૬૭૮૯", "01234567890123456789")
 LAKH, CRORE = 100_000, 10_000_000
@@ -49,7 +50,8 @@ _PATTERNS = [
 
 def amounts_in(text: str) -> list[int]:
     """Every rupee amount written in the text, in whole rupees. Bare numbers are not money."""
-    text = (text or "").translate(_DEV_DIGITS)
+    # "ड़" may arrive as one character (U+095C) or as ड + nukta; NFC gives the two-character form.
+    text = unicodedata.normalize("NFC", text or "").translate(_DEV_DIGITS)
     found: list[int] = []
     taken: list[tuple[int, int]] = []
     for pattern, value in _PATTERNS:
@@ -106,6 +108,7 @@ def words_to_digits(text: str) -> str:
     global _WORDS
     if _WORDS is None:
         _WORDS = _word_values()
+    text = unicodedata.normalize("NFC", text or "")
     out: list[str] = []
     total, cur, active, half = 0.0, 0.0, False, False
     decimal: float | None = None  # the whole part, after "point"

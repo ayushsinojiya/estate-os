@@ -175,6 +175,11 @@ LOCALITY_NAMES: dict[str, str] = {
     "Wagholi": "वाघोली", "Undri": "उंड्री", "Koregaon Park": "कोरेगाव पार्क", "Tathawade": "ताथवडे",
     "Sus": "सूस", "Dhanori": "धानोरी", "Mundhwa": "मुंढवा", "Warje": "वारजे", "Dhayari": "धायरी",
     "NIBM Road": "एनआयबीएम रोड", "Riya": "रिया",
+    # The projects, so the voice never reads them with an English accent mid-sentence.
+    "Skyline Crest": "स्काईलाइन क्रेस्ट", "Greenleaf Residency": "ग्रीनलीफ रेज़िडेंसी", "Greenleaf": "ग्रीनलीफ",
+    "Aurum Heights": "ऑरम हाइट्स", "Riverstone Towers": "रिवरस्टोन टावर्स",
+    "Lotus Enclave": "लोटस एन्क्लेव", "Orchid Park": "ऑर्किड पार्क", "Metro One": "मेट्रो वन",
+    "Bayview Residences": "बेव्यू रेज़िडेंसेज़", "Cedar Grove": "सीडर ग्रोव", "XYZ Realty": "एक्स वाय ज़ेड रियल्टी",
 }
 
 

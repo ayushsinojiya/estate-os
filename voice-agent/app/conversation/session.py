@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Callable
@@ -338,13 +339,13 @@ class CallSession:
                     if self._barge_task is None or self._barge_task.done():
                         self._barge_task = asyncio.create_task(self._watch_barge_in())
             elif isinstance(event, PartialTranscript):
-                text = "" if is_noise(event.text) else to_devanagari_script(event.text)
+                text = "" if is_noise(event.text) else to_devanagari_script(unicodedata.normalize("NFC", event.text))
                 self.turns.on_partial(text)
                 self.barge.on_text(text)
                 self._words_while_speaking(text)
             elif isinstance(event, FinalTranscript):
                 # Hindi spelt in another Indic script is converted, not lost; a jumble of scripts is noise.
-                text = "" if is_noise(event.text) else to_devanagari_script(event.text)
+                text = "" if is_noise(event.text) else to_devanagari_script(unicodedata.normalize("NFC", event.text))
                 self.turns.on_final(text, event.language)
                 self.barge.on_text(text)
                 self._words_while_speaking(text)
