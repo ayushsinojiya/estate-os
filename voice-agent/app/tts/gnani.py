@@ -61,14 +61,17 @@ class GnaniTTS:
     async def synthesize(self, text: str, language: Lang) -> AsyncIterator[bytes]:
         async with self._lock:
             await self._open()
+            # A barge-in may close the connection (cancel) while this sentence is still arriving: read
+            # from this request's own socket, and treat that close as the stop it is, not a failure.
+            ws = self._ws
             try:
-                await self._ws.send(json.dumps(self.request(text, language), ensure_ascii=False))
+                await ws.send(json.dumps(self.request(text, language), ensure_ascii=False))
                 started = final_chunk = False
                 while True:
                     # After the last chunk the closing message follows at once; never wait long for it.
                     timeout = 1.0 if final_chunk else self.REPLY_TIMEOUT_S
                     try:
-                        msg = await asyncio.wait_for(self._ws.recv(), timeout)
+                        msg = await asyncio.wait_for(ws.recv(), timeout)
                     except asyncio.TimeoutError:
                         if final_chunk:
                             return
@@ -94,6 +97,8 @@ class GnaniTTS:
                             return  # "Streaming completed": this request is done
                         final_chunk = True
             except ConnectionClosed as exc:
+                if self._ws is not ws:
+                    return  # stopped by a barge-in
                 self._ws = None
                 raise TTSError(f"gnani socket closed: {exc}") from exc
             except asyncio.CancelledError:

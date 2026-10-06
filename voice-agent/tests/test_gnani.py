@@ -97,3 +97,30 @@ async def test_a_sentence_after_the_first_is_not_silent():
             sizes.append(len(b"".join([c async for c in tts.synthesize(text, "hi")])))
         await tts.close()
     assert sizes == [len("एक"), len("दो दो"), len("तीन तीन तीन")]
+
+
+async def test_a_barge_in_stop_is_not_a_tts_failure():
+    """Closing the connection to stop Riya mid-sentence ends that sentence quietly; the next one works."""
+
+    async def server(ws):
+        async for msg in ws:
+            await ws.send(json.dumps({"type": "start"}))
+            await ws.send(json.dumps({"type": "audio", "data": {"audio": base64.b64encode(b"\x01" * 160).decode()}}))
+            if "slow" in json.loads(msg)["text"]:
+                await asyncio.sleep(5)
+            await ws.send(json.dumps({"type": "complete", "message": "Streaming completed"}))
+
+    async with serve(server, "127.0.0.1", 0) as srv:
+        port = srv.sockets[0].getsockname()[1]
+        tts = GnaniTTS("k", {"hi": "Urmila"}, url=f"ws://127.0.0.1:{port}")
+        got = []
+
+        async def speak():
+            async for chunk in tts.synthesize("slow sentence", "hi"):
+                got.append(chunk)
+                await tts.cancel()  # the caller starts talking
+
+        await asyncio.wait_for(speak(), 2)
+        after = b"".join([c async for c in tts.synthesize("next", "hi")])
+        await tts.close()
+    assert got == [b"\x01" * 160] and after == b"\x01" * 160
