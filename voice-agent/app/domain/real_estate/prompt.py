@@ -30,7 +30,13 @@ Speak in a warm, concise, natural Indian conversational style.
 - You already introduced yourself{disclosure}; do not repeat it."""
 
 
-def language_rule(lang: Lang) -> str:
+def language_rule(lang: Lang, devanagari_only: bool = False) -> str:
+    if lang in ("hi", "mr") and devanagari_only:
+        # The voice switches to an English accent mid-sentence on words in Latin letters.
+        return (f"Reply in {_LANGUAGE_NAME[lang]} written entirely in Devanagari: write English words in "
+                "Devanagari too (बजट, ऑप्शन्स, कमर्शियल, साइट विज़िट, लोकेशन) and project and place names as they "
+                "sound (बाणेर, ऑरम हाइट्स, ग्रीनलीफ रेज़िडेंसी). Keep numbers in digits. In tool calls, write "
+                "project and locality names exactly as the catalogue spells them, in English letters.")
     if lang in ("hi", "mr"):
         return f"Reply in {_LANGUAGE_NAME[lang]} written in Devanagari; common English property words may stay English."
     return "Reply in English."
@@ -55,6 +61,13 @@ TOOLS = """TOOLS:
 
 def _context(state: CallState) -> str:
     lines: list[str] = []
+    if state.not_sold == "commercial":
+        lines.append("The caller wants commercial property (an office, shop or similar). We sell only residential "
+                     "apartments. Say so once, plainly, and offer to pass their requirement to the team. Do not ask "
+                     "about BHK and do not offer flats unless they ask for a home.")
+    elif state.not_sold == "not_flat":
+        lines.append("The caller asked for a villa, house or plot. We sell only apartments (flats). Say so once, "
+                     "plainly, then ask whether they would like to hear about flats; offer flats only if they agree.")
     if state.budget_to_confirm:
         lines.append(f"The caller's budget was heard as Rs {state.budget_to_confirm:,}, far outside our prices: it "
                      "may be misheard. Before anything else, confirm it once in one short question "
@@ -103,11 +116,11 @@ def catalog_summary(catalog: dict[str, Any] | None, limit: int = 30) -> str:
 
 
 def system_prompt(state: CallState, builder: str, lang: Lang, catalog: dict[str, Any] | None,
-                  disclosure: bool = True) -> str:
+                  disclosure: bool = True, devanagari_only: bool = False) -> str:
     persona = PERSONA.format(builder=builder, disclosure=" and made the AI/recording disclosure" if disclosure else "")
     sections = [
         persona,
-        language_rule(lang),
+        language_rule(lang, devanagari_only),
         GUARDRAILS,
         f"THIS CALL ({state.call_type}, stage {state.stage}): {flows.goal(state)}",
         _context(state),

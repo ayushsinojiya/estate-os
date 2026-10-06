@@ -77,3 +77,24 @@ def test_a_reply_that_is_only_a_repeat_is_said_rather_than_silence():
     assert c.screen_reply("Sahyadri Grove में 2 BHK available है।", "hi") == ""
     assert c.take_dropped() == "Sahyadri Grove में 2 BHK available है।"
     assert c.take_dropped() == ""
+
+
+def test_an_office_request_is_answered_with_what_we_sell():
+    from app.domain.real_estate.prompt import system_prompt
+    c = _conversation()
+    c.screen_caller("मुझे कॉर्पोरेट ऑफिस में investment करना है", "hi")
+    assert c.state.not_sold == "commercial"
+    prompt = system_prompt(c.state, "XYZ Realty", "hi", c.plugin.catalog)
+    assert "only residential apartments" in prompt and "Do not ask about BHK" in prompt
+
+
+def test_a_villa_request_is_told_we_have_flats_first():
+    c = _conversation()
+    c.screen_caller("मुझे विला बाय करना है", "hi")
+    assert c.state.not_sold == "not_flat"
+
+
+def test_with_the_gnani_voice_riya_writes_everything_in_devanagari():
+    from app.domain.real_estate.prompt import language_rule
+    assert "entirely in Devanagari" in language_rule("hi", devanagari_only=True)
+    assert "may stay English" in language_rule("hi")

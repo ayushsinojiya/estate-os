@@ -184,3 +184,10 @@ def test_the_callers_words_stop_riya_even_without_a_voice_onset():
         s._words_while_speaking("हाँ")  # a backchannel alone would not have stopped her
         return stopped
     assert asyncio.run(scenario()) == [True]
+
+
+def test_an_unexpected_value_never_throws_away_the_post_call_summary():
+    from app.domain.real_estate.extraction import Extraction
+    e = Extraction.model_validate({"intent": "INVESTMENT", "property_type": "corporate office", "sentiment": "curious",
+                                   "summary": "wants an office"})
+    assert (e.intent, e.property_type, e.sentiment, e.summary) == ("BUY", "COMMERCIAL", None, "wants an office")

@@ -86,6 +86,8 @@ class CallState:
     visit_deferred: bool = False
     # Projects whose visit times were already offered in this call.
     slots_offered_for: list[str] = field(default_factory=list)
+    # What the caller asked for that the builder does not sell ("office", "villa"), said once by Riya.
+    not_sold: str | None = None
     # How many times Riya has asked about a visit (a visit is optional: once, unless the caller asks).
     visit_offers: int = 0
     # The project the caller is talking about; visits are offered and booked only for it.

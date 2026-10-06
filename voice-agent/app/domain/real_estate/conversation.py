@@ -58,6 +58,11 @@ _BOOKING = re.compile(r"(site\s*visit|visit\s+(?:karna|book|schedule)|dekhne\s+a
 _VISIT_QUESTION = re.compile(r"(visit|विज़िट|विजिट|व्हिजिट|देखने|पाहायला)[^?।]*(\?|चाहेंगे|चाहेंगी|करायची|करना है|करें(?=$|[\s,.!?।]))", re.I)
 _YES = re.compile(r"^\W*(?:हाँ|हां|हा|जी|ji|haan|han|yes|yeah|ok|okay|ओके|ठीक|theek|sure|ज़रूर|जरूर|बिल्कुल|चलेगा|"
                   r"chalega|कर\s+(?:दीजिए|दो|दीजिये)|हो|hoy)(?=$|[\s,.!?।])", re.I)
+# What the builder does not sell: everything here is residential apartments.
+_COMMERCIAL = re.compile(r"(office|ऑफिस|ऑफ़िस|commercial|कमर्शियल|कमर्शल|shop|दुकान|शॉप|showroom|शोरूम|warehouse|"
+                         r"गोदाम|godown|वेयरहाउस|retail|रिटेल|co-?working|को-?वर्किंग)", re.I)
+_NOT_FLAT = re.compile(r"(villa|विला|व्हिला|bungalow|बंगला|row\s*house|रो\s*हाउस|plot|प्लॉट|प्लाट|land|ज़मीन|जमीन|जमीन)", re.I)
+
 # The caller asks to hear something again: then a repeat is wanted.
 _REPEAT = re.compile(r"(दोबारा|फिर\s*से|फिरसे|repeat|again|पुन्हा|परत\s+सांगा|एक\s*बार\s*और|समझ\s+नहीं\s+आया)", re.I)
 # Common Devanagari spellings of the localities, so a caller saying "हिंजवड़ी" is understood.
@@ -69,6 +74,11 @@ _LOCALITY_SPELLINGS = {
 }
 # Project aliases too common to mean the project ("metro station").
 _WEAK_ALIASES = {"metro", "one", "park", "towers", "heights", "valley", "grove", "residency", "residences"}
+
+
+def _devanagari_only(settings) -> bool:
+    """Gnani's voice reads Latin-letter words with an English accent, as if switching language."""
+    return bool(getattr(settings, "devanagari_only_speech", False)) or getattr(settings, "tts_primary", "") == "gnani"
 
 
 def _norm(text: str) -> str:
@@ -172,7 +182,8 @@ class RealEstateConversation:
     def messages(self, lang: Lang) -> list[Message]:
         self.state.language = lang
         return [Message("system", system_prompt(self.state, self.plugin.phrases.builder_name, lang,
-                                                self.plugin.catalog, self.plugin.settings.disclose_ai))]
+                                                self.plugin.catalog, self.plugin.settings.disclose_ai,
+                                                _devanagari_only(self.plugin.settings)))]
 
     def tools(self) -> list[Tool]:
         if self._tools is None:
@@ -185,6 +196,10 @@ class RealEstateConversation:
         s.caller_turns += 1
         s.guard.add_caller_text(text)  # the caller's own figures (their budget) may be read back
         s.last_caller_text = text
+        if _COMMERCIAL.search(text):
+            s.not_sold = "commercial"
+        elif _NOT_FLAT.search(text) and s.not_sold is None:
+            s.not_sold = "not_flat"
         self._dropped = ""
         s.caller_asked_repeat = bool(_REPEAT.search(text))
         mentioned = self.mentioned_project(text)
