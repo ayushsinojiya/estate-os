@@ -122,27 +122,23 @@ class Container:
         s = self.settings
         if s.provider_mode == "fake":
             return FailoverTTS(SilenceTTS("silence_primary"), SilenceTTS("silence_fallback"))
-        from app.tts.rumik import RumikTTS
         from app.tts.sarvam_streaming import SarvamStreamingTTS
 
-        bulbul = SarvamStreamingTTS(s.sarvam_api_key, s.sarvam_tts_ws_url, s.sarvam_tts_model,
-                                    s.sarvam_tts_speaker, s.sarvam_tts_pace,
-                                    s.sarvam_tts_preprocessing)
+        def bulbul_tts() -> SarvamStreamingTTS:
+            return SarvamStreamingTTS(s.sarvam_api_key, s.sarvam_tts_ws_url, s.sarvam_tts_model,
+                                      s.sarvam_tts_speaker, s.sarvam_tts_pace,
+                                      s.sarvam_tts_preprocessing)
+
+        bulbul = bulbul_tts()
         if s.tts_primary == "gnani" and s.gnani_api_key:
             from app.tts.gnani import GnaniTTS
             gnani = GnaniTTS(s.gnani_api_key, {"hi": s.gnani_tts_voice_hi, "mr": s.gnani_tts_voice_mr,
                                                "en": s.gnani_tts_voice_en}, s.gnani_tts_model, s.gnani_tts_speed,
                              s.gnani_tts_url)
             return FailoverTTS(gnani, bulbul)
-        if s.tts_primary == "rumik" and s.rumik_api_key:
-            rumik = RumikTTS(s.rumik_api_key, s.rumik_base_url, s.rumik_model,
-                             s.rumik_voice_description, s.rumik_speaker)
-            return FailoverTTS(rumik, bulbul)
-        # Bulbul primary, Rumik behind it when a key is configured.
-        if s.rumik_api_key:
-            return FailoverTTS(bulbul, RumikTTS(s.rumik_api_key, s.rumik_base_url, s.rumik_model,
-                                                s.rumik_voice_description, s.rumik_speaker))
-        return FailoverTTS(bulbul, bulbul)
+        # The fallback is Bulbul again on its own socket: a stalled connection is replaced, and the
+        # caller keeps hearing the same voice for the whole call.
+        return FailoverTTS(bulbul, bulbul_tts())
 
     def track(self, task) -> None:
         """Keep a reference to fire-and-forget work so it is not garbage-collected mid-flight."""
@@ -224,8 +220,7 @@ def build_container(settings: Settings, plugin_factory: PluginFactory | None = N
         voicelink = (VoiceLinkClient(settings.voice_link_base_url, settings.voice_link_username,
                                      settings.voice_link_password)
                      if settings.voice_link_username else None)
-        voice_id = (f"rumik_{settings.rumik_model}" if settings.tts_primary == "rumik"
-                    else f"gnani_{settings.gnani_tts_model}_{settings.gnani_tts_voice_hi}"
+        voice_id = (f"gnani_{settings.gnani_tts_model}_{settings.gnani_tts_voice_hi}"
                     if settings.tts_primary == "gnani" and settings.gnani_api_key
                     else f"sarvam_{settings.sarvam_tts_model.replace(':', '')}_{settings.sarvam_tts_speaker}")
     else:

@@ -191,3 +191,15 @@ def test_an_unexpected_value_never_throws_away_the_post_call_summary():
     e = Extraction.model_validate({"intent": "INVESTMENT", "property_type": "corporate office", "sentiment": "curious",
                                    "summary": "wants an office"})
     assert (e.intent, e.property_type, e.sentiment, e.summary) == ("BUY", "COMMERCIAL", None, "wants an office")
+
+
+def test_running_out_of_lookups_is_never_silence():
+    """The model keeps searching an empty knowledge base: the caller hears a line, not dead air."""
+    async def run(args):
+        return ToolOutcome({"found": False})
+
+    llm = ScriptedLLM([call("lookup", q=str(i)) for i in range(10)])
+    s, speech = session(llm, StubConversation(tool_list=[_tool(run, filler=None)]), max_tool_hops=2)
+    asyncio.run(s._respond("what are the amenities", "en"))
+    assert speech.started == [PHRASES["no_answer"]]
+    assert s.metrics.unanswered == 1

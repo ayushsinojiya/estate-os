@@ -160,8 +160,13 @@ class CallSession:
         # The caller is mid-sentence (voice detected, or words still arriving): not silence.
         if self.turns.speaking or self.turns.current_text():
             return
+        # The first quiet spell gets no line: it usually follows a sound the agent ignored as noise
+        # or a "hmm", and "sorry, I couldn't hear you" to a caller who just spoke sounds broken.
+        if count == 1:
+            log.info("call %s: caller quiet, waiting before a prompt", self.info.call_id)
+            return
         log.info("call %s: silence prompt %d", self.info.call_id, count)
-        await self._say_phrase("still_there" if count > 1 else "silence_prompt", self.lang.current)
+        await self._say_phrase("still_there", self.lang.current)
 
     async def _on_silence_timeout(self) -> None:
         if self._ending:
@@ -463,6 +468,10 @@ class CallSession:
                     await sentences.put(sentence)
                 if not got_any:
                     self.metrics.unanswered += 1
+                    # The model ran out of lookups without a word (an empty knowledge base sends it
+                    # searching again and again): say something rather than leave the caller in silence.
+                    if self._pending_end is None and not self._ending:
+                        await sentences.put((_PHRASE, "no_answer"))
             except AllProvidersFailed:
                 log.error("call %s: no LLM provider available", self.info.call_id)
                 if not got_any:

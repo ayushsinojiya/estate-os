@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     sarvam_tts_pace: float = 1.0
     sarvam_tts_preprocessing: bool = True
 
-    # Primary TTS: sarvam_streaming (Bulbul v3, fallback Rumik) or rumik (Mulberry, fallback Bulbul REST)
-    tts_primary: Literal["sarvam_streaming", "rumik", "gnani"] = "sarvam_streaming"
+    # Primary TTS: sarvam_streaming (Bulbul v3) or gnani (Vachana, Bulbul behind it)
+    tts_primary: Literal["sarvam_streaming", "gnani"] = "sarvam_streaming"
 
     # Deepgram
     # Primary STT: sarvam (Saaras v3 streaming, Deepgram as fallback) or deepgram (Nova-3, Sarvam as fallback).
@@ -108,20 +108,8 @@ class Settings(BaseSettings):
     gnani_llm_api_key: str = ""  # empty: GNANI_API_KEY
     gnani_llm_auth_header: str = "Authorization"
 
-    # Rumik
-    rumik_api_key: str = ""
-    rumik_base_url: str = "https://silk-api.rumik.ai"
-    rumik_model: str = "mulberry"
-    rumik_speaker: str = ""
-    # CL-012: Rumik has no speed setting; its audio is sped up here without changing pitch (1.0 = off)
-    rumik_speed: float = 1.2
     # Linear gain applied to outgoing telephony audio. 1.0 leaves the TTS level untouched.
     tts_output_gain: float = 1.0
-    rumik_voice_description: str = (
-        "a warm, professional female voice in her late 20s from Pune, natural "
-        "conversational pacing, clear Marathi and Hindi with natural English words, "
-        "polite customer-care register, confident but not salesy"
-    )
 
     # LLM
     llm_primary_model: str = "sarvam-105b-conversations"

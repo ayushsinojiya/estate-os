@@ -1,13 +1,11 @@
 """Riya's system prompt, assembled from parts and versioned in code.
 
 Kept compact because every token is paid on every turn of a live call: persona, speaking rules,
-guardrails, this call's goal, what is already known, the catalogue, and how to use the tools.
+guardrails, this call's goal, what is already known, and how to use the tools.
 PROMPT_VERSION is logged with every call and sent to the CRM with the call record.
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 from app.lang.languages import Lang
 
@@ -15,7 +13,7 @@ from . import flows
 from .sensitive import GUARDRAILS
 from .state import CallState
 
-PROMPT_VERSION = "re-2026.10.1"
+PROMPT_VERSION = "re-2026.10.2"
 
 _LANGUAGE_NAME = {"en": "English", "hi": "Hindi", "mr": "Marathi"}
 
@@ -23,7 +21,7 @@ PERSONA = """You are Riya, a property advisor calling on behalf of {builder}. Yo
 Speak in a warm, concise, natural Indian conversational style.
 - Ask ONE question per turn. Keep every reply under about two short sentences.
 - Never read out a list of more than three items.
-- Write every number in digits exactly as the tools give them, never as words: "76.5 lakh",
+- Write every number in digits exactly as the documents give them, never as words: "76.5 lakh",
   "1 crore 5 lakh", "720 sq ft", "3 units", "Monday 6 PM". The voice reads them out in words.
   Prices the Indian way with lakh/crore, never as long numbers; times in IST.
 - Follow the caller's language and code-mixing; never announce a language switch.
@@ -36,17 +34,18 @@ def language_rule(lang: Lang, devanagari_only: bool = False) -> str:
         return (f"Reply in {_LANGUAGE_NAME[lang]} written entirely in Devanagari: write English words in "
                 "Devanagari too (बजट, ऑप्शन्स, कमर्शियल, साइट विज़िट, लोकेशन) and project and place names as they "
                 "sound (बाणेर, ऑरम हाइट्स, ग्रीनलीफ रेज़िडेंसी). Keep numbers in digits. In tool calls, write "
-                "project and locality names exactly as the catalogue spells them, in English letters.")
+                "project and locality names in English letters.")
     if lang in ("hi", "mr"):
         return f"Reply in {_LANGUAGE_NAME[lang]} written in Devanagari; common English property words may stay English."
     return "Reply in English."
 
 
 TOOLS = """TOOLS:
-- Prices/availability: get_price, get_availability, search_properties. These are the only source of prices.
-- ask_knowledge: amenities, specifications, payment-plan stages, charges, RERA, location, FAQs. Write
-  `question` as short English keywords even when the caller speaks Hindi or Marathi. Answer
-  only from the returned chunks; if nothing relevant comes back, say an expert will confirm.
+- ask_knowledge: the uploaded documents, your ONLY source of facts — which projects we sell, locations,
+  configurations, prices, sizes, availability, possession, RERA, amenities, specifications, payment plan,
+  charges and FAQs. Look it up before stating any fact. Write `question` as short English keywords even
+  when the caller speaks Hindi or Marathi. Answer only from the returned chunks; if nothing relevant comes
+  back, say an expert will confirm.
 - save_requirements: whenever you learn a requirement (budget in rupees, BHK, locality, timing, purpose).
 - Visits: get_visit_slots, offer 2–3 options once, then book_site_visit with one of the offered slot_start values.
   Offer a visit at most once unless the caller raises it again; never repeat the same times.
@@ -103,19 +102,7 @@ def _context(state: CallState) -> str:
     return "\n".join(lines)
 
 
-def catalog_summary(catalog: dict[str, Any] | None, limit: int = 30) -> str:
-    if not catalog or not catalog.get("projects"):
-        return "PROJECTS: (catalogue unavailable; use search_properties)"
-    localities = {loc["id"]: loc["name"] for loc in catalog.get("localities", [])}
-    parts = []
-    for project in catalog["projects"][:limit]:
-        aliases = [a for a in project.get("aliases", []) if a.lower() != project["name"].lower()]
-        parts.append(f"{project['name']} — {localities.get(project.get('localityId'), '')}"
-                     + (f" (also: {', '.join(aliases)})" if aliases else ""))
-    return "PROJECTS you sell (only these): " + "; ".join(parts) + "."
-
-
-def system_prompt(state: CallState, builder: str, lang: Lang, catalog: dict[str, Any] | None,
+def system_prompt(state: CallState, builder: str, lang: Lang,
                   disclosure: bool = True, devanagari_only: bool = False) -> str:
     persona = PERSONA.format(builder=builder, disclosure=" and made the AI/recording disclosure" if disclosure else "")
     sections = [
@@ -124,7 +111,6 @@ def system_prompt(state: CallState, builder: str, lang: Lang, catalog: dict[str,
         GUARDRAILS,
         f"THIS CALL ({state.call_type}, stage {state.stage}): {flows.goal(state)}",
         _context(state),
-        catalog_summary(catalog),
         TOOLS,
     ]
     return "\n\n".join(s for s in sections if s)

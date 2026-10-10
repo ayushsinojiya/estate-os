@@ -182,7 +182,7 @@ class RealEstateConversation:
     def messages(self, lang: Lang) -> list[Message]:
         self.state.language = lang
         return [Message("system", system_prompt(self.state, self.plugin.phrases.builder_name, lang,
-                                                self.plugin.catalog, self.plugin.settings.disclose_ai,
+                                                self.plugin.settings.disclose_ai,
                                                 _devanagari_only(self.plugin.settings)))]
 
     def tools(self) -> list[Tool]:

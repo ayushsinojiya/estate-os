@@ -72,6 +72,11 @@ _PHRASES: dict[str, dict[Lang, str]] = {
         "hi": "मेरी तरफ़ से थोड़ी दिक्कत आ रही है। हमारे प्रॉपर्टी एक्सपर्ट जल्द ही आपको कॉल करेंगे।",
         "mr": "माझ्याकडे थोडी अडचण येत आहे. आमचे प्रॉपर्टी एक्सपर्ट तुम्हाला लवकरच कॉल करतील.",
     },
+    "no_answer": {
+        "en": "I'll have our property expert confirm that for you. What else would you like to know?",
+        "hi": "यह मैं हमारे प्रॉपर्टी एक्सपर्ट से कन्फ़र्म करवा दूँगी। और क्या जानना चाहेंगे?",
+        "mr": "हे मी आमच्या प्रॉपर्टी एक्सपर्टकडून कन्फर्म करून घेते. अजून काय जाणून घ्यायचं आहे?",
+    },
     # ---- tool fillers, played while a lookup runs
     "filler_search": {
         "en": "Sure, let me look.",

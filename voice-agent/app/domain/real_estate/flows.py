@@ -33,8 +33,8 @@ GOALS = {
     "DELTA": "Ask what has changed since the last conversation and update only that.",
     "QUALIFY": "Fill the missing requirements naturally, one question per turn, never as an interrogation. "
                "Read critical values back once and record the outcome with save_requirements(readback=…).",
-    "RECOMMEND": "Use search_properties (or get_price for a named project) and recommend at most two options "
-                 "that are available, in their budget.",
+    "RECOMMEND": "Look up options in the documents (ask_knowledge) and recommend at most two that fit "
+                 "their budget, as the documents describe them.",
     "VISIT": "A site visit is optional. If the caller sounds interested in a project, ask once whether they "
              "would like to see it; if they agree, get_visit_slots for that project, offer two or three times, "
              "book the one they pick with book_site_visit and confirm project, day, time and the agent's name. "

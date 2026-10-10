@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from app.config import Settings
 from app.domain.base import CallInfo
 from app.domain.real_estate.plugin import RealEstatePlugin
-from app.domain.real_estate.tools import SearchArgs, SlotArgs
+from app.domain.real_estate.tools import SlotArgs
 from app.outbound.registry import CallRegistry
 
 
@@ -56,8 +56,8 @@ def test_a_far_off_budget_is_confirmed_before_searching():
     c = _conversation()
     c.screen_caller("मेरा budget 780 लाख है", "hi")
     assert c.state.budget_to_confirm == 78_000_000
-    held = asyncio.run(c.toolbox.search_properties(SearchArgs(budget_max_inr=78_000_000, bhk=[2]))).content
-    assert held["options"] == [] and "confirm the budget" in held["instruction"]
+    from app.domain.real_estate.prompt import system_prompt
+    assert "confirm it once" in system_prompt(c.state, "XYZ Realty", "hi")
     c.screen_caller("नहीं नहीं, 70 से 80 लाख", "hi")  # the caller corrects it
     assert c.state.budget_to_confirm is None
 
@@ -84,7 +84,7 @@ def test_an_office_request_is_answered_with_what_we_sell():
     c = _conversation()
     c.screen_caller("मुझे कॉर्पोरेट ऑफिस में investment करना है", "hi")
     assert c.state.not_sold == "commercial"
-    prompt = system_prompt(c.state, "XYZ Realty", "hi", c.plugin.catalog)
+    prompt = system_prompt(c.state, "XYZ Realty", "hi")
     assert "only residential apartments" in prompt and "Do not ask about BHK" in prompt
 
 
